@@ -170,12 +170,27 @@ impl Engine {
             let mut geometry = f.clone();
             geometry.row = 0;
             geometry.col = 0;
+            geometry.sources.clear();
             if let Some(im) = self.cache.get(&key(&geometry, self.cell)) {
                 if im.columns > 0 && im.columns <= f.cols {
-                    compact
-                        .entry(f.row)
-                        .or_default()
-                        .push((f.col, f.cols, im.columns));
+                    if f.sources.is_empty() {
+                        compact
+                            .entry(f.row)
+                            .or_default()
+                            .push((f.col, f.cols, im.columns));
+                    } else {
+                        for span in &f.sources {
+                            let width = if span.row == f.row && span.col == f.col {
+                                im.columns
+                            } else {
+                                0
+                            };
+                            compact
+                                .entry(span.row)
+                                .or_default()
+                                .push((span.col, span.cols, width));
+                        }
+                    }
                 }
             }
         }
@@ -198,6 +213,7 @@ impl Engine {
             let mut geometry = f.clone();
             geometry.row = 0;
             geometry.col = 0;
+            geometry.sources.clear();
             let key = key(&geometry, self.cell);
             let spans = compact.get(&f.row).map(Vec::as_slice).unwrap_or(&[]);
             let col = crate::layout::shifted(f.col, spans);
@@ -320,6 +336,41 @@ fn upload(id: u32, png: &str) -> String {
 mod tests {
     use super::*;
     use std::sync::mpsc;
+    #[test]
+    fn wrapped_source_fragments_are_removed_and_scroll_as_one_equation() {
+        let (tx, requests) = mpsc::sync_channel(1);
+        let (responses, rx) = mpsc::channel();
+        let mut e = Engine::new(15, 70, (16, 34), tx, rx);
+        e.accept(
+            b"\x1b[?1049hHere \\(\\partial/\r\n  \\partial t\\) means time.",
+            false,
+            false,
+        );
+        let req = requests.recv().unwrap();
+        assert_eq!(req.formula.sources.len(), 2);
+        responses
+            .send(Response {
+                key: req.key,
+                png: STANDARD.encode([1, 2, 3]),
+                columns: 5,
+                error: None,
+            })
+            .unwrap();
+        e.poll();
+        let text = e.physical.screen().contents();
+        assert!(!text.contains("partial"));
+        assert!(text.contains("means time."));
+        assert_eq!(e.pins.len(), 1);
+        e.accept(b"\x1b[1;1H\x1b[2L", false, true);
+        assert_eq!(e.stats.requests, 1);
+        assert_eq!(e.stats.uploads, 1);
+        assert_eq!(e.pins.len(), 1);
+        assert!(!e.physical.screen().contents().contains("partial"));
+        // If the closing delimiter leaves the viewport, restore readable source.
+        e.accept(b"\x1b[4;1H\x1b[2K", false, false);
+        assert!(e.pins.is_empty());
+        assert!(e.physical.screen().contents().contains("partial/"));
+    }
     #[test]
     fn compact_prose_survives_partial_updates_and_scroll_without_rerender() {
         let (tx, requests) = mpsc::sync_channel(1);

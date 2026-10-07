@@ -16,10 +16,10 @@ master, slave = pty.openpty()
 fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 30, 100, 1600, 1020))
 child = r'''
 import sys,time
-sys.stdout.write("\x1b[?1049h\x1b[?2026h\x1b[2J\x1b[HHello \\(x^2\\)\r\n\x1b[?2026l")
+sys.stdout.write("\x1b[?1049h\x1b[?2026h\x1b[2J\x1b[HHello \\(x^2\\)\r\n\x1b[3;1HHere \\(\\partial/\r\n  \\partial t\\) means time.\x1b[?2026l")
 sys.stdout.flush()
 time.sleep(2)
-sys.stdout.write("\x1b[?2026h\x1b[2J\x1b[5;1HHello \\(x^2\\)\x1b[?2026l")
+sys.stdout.write("\x1b[?2026h\x1b[2J\x1b[5;1HHello \\(x^2\\)\x1b[7;1HHere \\(\\partial/\r\n  \\partial t\\) means time.\x1b[?2026l")
 sys.stdout.flush()
 time.sleep(1)
 sys.stdout.write("\x1b[?1049l")
@@ -51,8 +51,9 @@ try:
             break
     assert proc.wait(timeout=2) == 0
     assert b'Hello' in output
-    assert output.count(b'\x1b_Ga=p,') >= 2, 'expected placements before and after redraw'
+    assert output.count(b'\x1b_Ga=p,') >= 4, 'expected placements before and after redraw'
     assert b'\x1b[5;7H\x1b_Ga=p,' in output, 'image must move to current formula location'
+    assert b'\x1b[8;3H\x1b_Ga=p,' in output, 'wrapped equation must render and move without resizing'
     print('PTY: real worker produced placements before and after screen movement')
 finally:
     if proc.poll() is None:
