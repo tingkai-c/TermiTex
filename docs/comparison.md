@@ -11,9 +11,10 @@ Reviewed October 7, 2026. This page separates recorded measurements from archite
 | Native RaTeX driver vs our MathJax worker | Five fresh processes each; 81 distinct equations; CPU, peak RSS, request latency, matched canvas dimensions | Lower native rendering cost for this workload | Current complete TermiTex performance; TFormula or TXM superiority |
 | Earlier TFormula-based TermiTex backend vs our direct backend | Three local trials; request latency and sampled worker-tree RSS | An improvement over our historical integration | A benchmark of the upstream TFormula CLI; comparable peak-RSS numbers |
 | Compact vs compatibility layout | Rust source-cell and placement checks; both backends exercised through a synthetic PTY | Expected behavior on those test cases | Universal terminal-app compatibility or live scrolling frame rates |
-| TermiTex vs TFormula vs TXM | Upstream documentation and our implementation | Differences in workflow and features | A measured winner for CPU, memory, latency, or compatibility |
+| TermiTex vs TFormula | Five alternating full-wrapper PTY trials; 24 validated placements each; sampled tree RSS | Lower placement latency and sampled RSS for the tested workload | CPU savings, visible frame rate, or broader application compatibility |
+| TXM | Upstream documentation | Different expression-rendering workflow | A comparable live-wrapper timing |
 
-Sources: [native benchmark and raw data](../benchmarks/ratex/README.md), [historical backend measurements](../benchmarks/README.md), [Rust integration tests](../tests/), [TFormula README](https://github.com/mikewang817/TFormula#tformula), [TXM README](https://github.com/thatmagicalcat/txm#txm).
+Sources: [live-wrapper benchmark](../benchmarks/competitors/README.md), [native benchmark and raw data](../benchmarks/ratex/README.md), [historical backend measurements](../benchmarks/README.md), [Rust integration tests](../tests/), [TFormula README](https://github.com/mikewang817/TFormula#tformula), [TXM README](https://github.com/thatmagicalcat/txm#txm).
 
 ## Performance interpretation
 
@@ -23,7 +24,7 @@ TFormula documents persistent caches and reusable placements. Those can change t
 
 TXM exposes direct expression rendering and bindings. Measuring that command against a running PTY wrapper would mix different responsibilities. Its renderer could be compared separately using the same formula corpus, output geometry, and quality checks. [Upstream usage](https://github.com/thatmagicalcat/txm#txm).
 
-For now, the supported performance claim is scoped to our recorded backend experiment. There is no matched end-to-end competitor benchmark in this repository.
+The live-wrapper experiment adds a scoped competitor result. Its source-to-placement timings include default scheduling delays and stop before actual terminal display. It does not supersede the separate compatibility and live-smoothness criteria below.
 
 ## Reproducible head-to-head criteria
 

@@ -28,7 +28,26 @@ Turn LaTeX in terminal output into typeset equations without a custom Codex buil
 
 ## Quick start
 
-Requires Git, a recent Rust toolchain (tested with 1.95), Ghostty, and Codex CLI on `PATH`.
+On macOS, with [Homebrew](https://brew.sh), Ghostty, and Codex CLI installed:
+
+```sh
+brew install tingkai-c/tap/termitex
+termitex
+```
+
+Homebrew builds the native renderer from a pinned release and installs Rust as a build dependency automatically. The initial install may take a few minutes; Node and npm are not required. This is our [project tap](https://github.com/tingkai-c/homebrew-tap), not a Homebrew/core formula.
+
+To update later:
+
+```sh
+brew update
+brew upgrade termitex
+```
+
+<details>
+<summary>Build from source instead</summary>
+
+Requires Git and a recent Rust toolchain (tested with 1.95).
 
 ```sh
 git clone https://github.com/tingkai-c/TermiTex.git
@@ -37,36 +56,39 @@ cargo build --release --locked
 ./target/release/termitex
 ```
 
+</details>
+
 The default command launches `codex -c tui.rendering.math=false`. To pass your own Codex options:
 
 ```sh
-./target/release/termitex -- codex -c tui.rendering.math=false --model MODEL
+termitex -- codex -c tui.rendering.math=false --model MODEL
 ```
 
 For another interactive program, opt into compatibility mode:
 
 ```sh
-./target/release/termitex --layout compatibility -- your-program
+termitex --layout compatibility -- your-program
 ```
 
 The native binary can run outside the checkout. Keep the [font licenses and notices](licenses/) with redistributed binaries. Existing Codex installations are not modified.
 
 ## Performance
 
-**The native renderer used about 95% less CPU time and 87% less peak memory than our MathJax worker in an isolated benchmark.** These are renderer measurements, not total terminal resource savings or a head-to-head TFormula result.
+**TermiTex vs TFormula, running the same live-terminal workload.** Both wrappers rendered all 24 cases in each trial: 12 different display equations, then the same 12 again.
 
-| Metric | Native RaTeX benchmark driver | TermiTex MathJax worker | Difference |
-| :--- | ---: | ---: | ---: |
-| CPU time, complete 81-equation process | 16.38 ms | 319.08 ms | 94.9% lower |
-| Peak process memory (RSS) | 14.84 MiB | 114.13 MiB | 87.0% lower |
-| Warm request, new equation | 0.093 ms | 1.50 ms | About 16× faster |
-| Process launch to first PNG | 4.41 ms | 121.19 ms | Median; variable cold starts |
+| Metric · median across 5 trials | TermiTex 0.1.0 · native, compatibility mode | TFormula 0.3.1 · default settings |
+| :--- | ---: | ---: |
+| Launch → first image placement | **18.57 ms** | 361.11 ms |
+| New equation → placement, after first render | **5.19 ms** | 203.85 ms |
+| Repeated equation → placement | **0.49 ms** | 196.75 ms |
+| Peak sampled process-tree RSS | **20.88 MiB** | 184.22 MiB |
+| Cases producing validated PNG placements per trial | 24 / 24 | 24 / 24 |
 
-Medians across five fresh-process trials per backend on local macOS arm64, measured October 7, 2026. Each trial rendered 81 distinct expressions at matched canvas sizes. Node v25.9.0; Rust 1.95.0; pinned RaTeX 0.1.14. MathJax used fresh disk caches. The native driver predates the integrated backend.
+Measured October 7, 2026, on macOS 26.6 / arm64 with Node 26.10.0. Five alternating trials, fresh application caches, a 100 × 30 synthetic terminal, and 16 × 34 px cells. Memory includes the wrapper, renderer descendants, and the identical fixture child; it excludes the benchmark controller and terminal emulator.
 
-First-response outliers reached **584.8 ms for RaTeX and 371.8 ms for MathJax**. Measurements exclude the PTY frontend, Codex, Ghostty, and live display latency. Cached scrolling does not incur a fresh typesetting request, so these ratios do not describe scrolling speed.
+**Scope:** placement means the image command reached our headless terminal harness—not that Ghostty displayed a frame. New/repeated latency starts when source text reaches that harness. TFormula's default scan/stability scheduling is included; this is not a pure typesetting-speed comparison. Process-tree RSS is sampled, can miss peaks, and can double-count shared pages. This is not a CPU-time or broad compatibility benchmark. TXM renders supplied expressions rather than wrapping this workload, so it is not assigned an incomparable timing.
 
-[Methodology and reproduction](benchmarks/ratex/README.md) · [Raw measurements](benchmarks/ratex/results.jsonl) · [Earlier backend measurements](benchmarks/README.md)
+[Reproduce the comparison](benchmarks/competitors/README.md) · [Raw trials](benchmarks/competitors/results.jsonl) · [Earlier internal renderer benchmark](benchmarks/ratex/README.md)
 
 ## Comparison
 
@@ -74,14 +96,14 @@ Different tools cover different workflows. Competitor capabilities below come fr
 
 | Tool | Main workflow | Rendering and runtime | Performance evidence available here |
 | :--- | :--- | :--- | :--- |
-| **TermiTex / RaTeX** | Live PTY wrapper; compact or source-preserving layout | Native Rust worker; embedded math fonts | Isolated native driver measurements above; production end-to-end comparison pending |
-| **TermiTex / MathJax** | Same wrapper and layouts; alternative math syntax coverage | Node.js with MathJax/resvg | Worker measurements above; not a proxy for TFormula performance |
-| [**TFormula**](https://github.com/mikewang817/TFormula#tformula) | Live agent wrapper plus a document reader; source-preserving overlays and wrapped-formula slices | MathJax; reusable image placements and persistent caching | No matched end-to-end CPU, memory, or frame-time measurement here |
+| **TermiTex / RaTeX** | Live PTY wrapper; compact or source-preserving layout | Native Rust worker; embedded math fonts | Live-wrapper placement and sampled memory measurements above |
+| **TermiTex / MathJax** | Same wrapper and layouts; alternative math syntax coverage | Node.js with MathJax/resvg | [Separate internal worker benchmark](benchmarks/ratex/README.md); not included above |
+| [**TFormula**](https://github.com/mikewang817/TFormula#tformula) | Live agent wrapper plus a document reader; source-preserving overlays and wrapped-formula slices | MathJax; reusable image placements and persistent caching | Live-wrapper placement and sampled memory measurements above; no live frame-time measurement |
 | [**TXM**](https://github.com/thatmagicalcat/txm#txm) | Render supplied LaTeX expressions; library/editor integration | Rust CLI and library; Python bindings available | Not benchmarked here; expression rendering is a different workload from live PTY tracking |
 
 **How to read this:** TFormula's persistent cache can avoid repeat rendering across sessions; our native backend currently caches final images only within a session. TXM's expression renderer needs an integration layer to be evaluated on the same live-terminal workload. Runtime language alone cannot establish which complete application is faster or more compatible.
 
-We do **not** claim broader compatibility or faster scrolling than TFormula. A fair comparison must pin versions, use identical input and terminal geometry, separate cold/warm caches, count all child processes, and verify output correctness before comparing latency. See [comparison scope](docs/comparison.md).
+These results establish lower placement latency and sampled memory for this workload and configuration. They do **not** establish broader compatibility or faster live scrolling. See [comparison scope](docs/comparison.md).
 
 ## Configuration
 
@@ -113,7 +135,7 @@ Precedence: **CLI > environment > config > default**. Options after `--`, or aft
 
 ### Use MathJax
 
-Requires Node.js 20+ and the worker files in the build checkout:
+The Homebrew package includes the native renderer only. For MathJax, use the source-build instructions above, keep the checkout, and install Node.js 20+. From that checkout:
 
 ```sh
 npm ci --ignore-scripts

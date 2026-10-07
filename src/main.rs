@@ -121,6 +121,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     if args.first().is_some_and(|s| s == "--internal-ratex-worker") {
         return native::worker();
     }
+    if args.first().is_some_and(|a| a == "--version" || a == "-V") {
+        println!("termitex {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
     if args.first().is_some_and(|a| a == "--help" || a == "-h") {
         println!(
             "TermiTex: asynchronous math rendering for Ghostty\ntermitex [--renderer ratex|mathjax] [--layout compact|compatibility] [--] command [args...]\nDefault renderer: ratex (native, no Node required).\nDefault layout: compact. Compatibility preserves text and centers overlays; TERMITEX_LAYOUT or config layout also selects it.\nConfig: ~/.config/termitex/config.toml, renderer = \"ratex\" or \"mathjax\".\nPrecedence: --renderer > TERMITEX_RENDERER > config > default.\nUse: termitex\nTERMITEX_STATS=/path.json writes timing counters at exit.\nTERMITEX_FG / TERMITEX_BG override default colors.\nNo stock Codex modifications."
@@ -130,6 +134,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let options = config::load(args)?;
     let renderer = options.renderer;
     let args = options.command;
+    let mathjax_worker = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("worker/render.mjs");
+    if renderer == config::Renderer::Mathjax && !mathjax_worker.is_file() {
+        return Err("MathJax requires a source checkout with npm dependencies; the Homebrew package provides native RaTeX. See https://github.com/tingkai-c/TermiTex#use-mathjax".into());
+    }
     if unsafe { libc::isatty(0) } != 1 || unsafe { libc::isatty(1) } != 1 {
         return Err("run from an interactive Ghostty terminal".into());
     }
@@ -183,7 +191,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         config::Renderer::Mathjax => {
             let mut cmd = Command::new("node");
-            cmd.arg(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("worker/render.mjs"));
+            cmd.arg(mathjax_worker);
             cmd
         }
     };
