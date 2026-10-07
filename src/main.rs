@@ -1,7 +1,9 @@
+mod config;
 mod detect;
 mod engine;
 mod frame;
 mod layout;
+mod native;
 use engine::{Engine, Request, Response};
 use frame::FrameGate;
 use std::{
@@ -115,23 +117,19 @@ fn main() {
     }
 }
 fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().is_some_and(|s| s == "--internal-ratex-worker") {
+        return native::worker();
+    }
     if args.first().is_some_and(|a| a == "--help" || a == "-h") {
         println!(
-            "termitex [--] command [args...]\nExperimental Ghostty PTY math renderer.\nUse: termitex\nTERMITEX_STATS=/path.json writes timing counters at exit.\nTERMITEX_FG / TERMITEX_BG override default colors.\nNo stock Codex modifications."
+            "TermiTex: asynchronous math rendering for Ghostty\ntermitex [--renderer ratex|mathjax] [--] command [args...]\nDefault renderer: ratex (native, no Node required).\nConfig: ~/.config/termitex/config.toml, renderer = \"ratex\" or \"mathjax\".\nPrecedence: --renderer > TERMITEX_RENDERER > config > default.\nUse: termitex\nTERMITEX_STATS=/path.json writes timing counters at exit.\nTERMITEX_FG / TERMITEX_BG override default colors.\nNo stock Codex modifications."
         );
         return Ok(());
     }
-    if args.first().is_some_and(|s| s == "--") {
-        args.remove(0);
-    }
-    if args.is_empty() {
-        args = vec![
-            "codex".into(),
-            "-c".into(),
-            "tui.rendering.math=false".into(),
-        ];
-    }
+    let options = config::load(args)?;
+    let renderer = options.renderer;
+    let args = options.command;
     if unsafe { libc::isatty(0) } != 1 || unsafe { libc::isatty(1) } != 1 {
         return Err("run from an interactive Ghostty terminal".into());
     }
@@ -177,10 +175,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     if !pending.is_empty() {
         pty.write_all(&pending)?;
     }
-    let worker_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("worker/render.mjs");
+    let mut worker_command = match renderer {
+        config::Renderer::Ratex => {
+            let mut cmd = Command::new(std::env::current_exe()?);
+            cmd.arg("--internal-ratex-worker");
+            cmd
+        }
+        config::Renderer::Mathjax => {
+            let mut cmd = Command::new("node");
+            cmd.arg(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("worker/render.mjs"));
+            cmd
+        }
+    };
     let mut worker = WorkerGuard(
-        Command::new("node")
-            .arg(worker_path)
+        worker_command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -220,6 +228,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     signal_hook::flag::register(libc::SIGWINCH, resize.clone())?;
     let mut engine = Engine::new(w.ws_row, w.ws_col, metrics, tx, rx);
+    engine.renderer = renderer.name().into();
     engine.fg = std::env::var("TERMITEX_FG").unwrap_or(engine.fg);
     engine.bg = std::env::var("TERMITEX_BG").unwrap_or(engine.bg);
     let mut gate = FrameGate::new();

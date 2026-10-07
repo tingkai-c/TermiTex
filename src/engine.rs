@@ -8,14 +8,14 @@ use std::{
     time::Instant,
 };
 const Z: u32 = 20_270_001;
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Request {
     pub key: String,
     pub formula: Formula,
     pub cell_width: u16,
     pub cell_height: u16,
 }
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Response {
     pub key: String,
     #[serde(default)]
@@ -66,6 +66,7 @@ pub struct Engine {
     pub fg: String,
     pub bg: String,
     pub enabled: bool,
+    pub renderer: String,
 }
 impl Engine {
     pub fn new(
@@ -93,6 +94,7 @@ impl Engine {
             fg: "#ffffff".into(),
             bg: "#282c34".into(),
             enabled: true,
+            renderer: "ratex".into(),
         }
     }
     pub fn resize(&mut self, rows: u16, cols: u16) {
@@ -171,7 +173,7 @@ impl Engine {
             geometry.row = 0;
             geometry.col = 0;
             geometry.sources.clear();
-            if let Some(im) = self.cache.get(&key(&geometry, self.cell)) {
+            if let Some(im) = self.cache.get(&key(&geometry, self.cell, &self.renderer)) {
                 if im.columns > 0 && im.columns <= f.cols {
                     if f.sources.is_empty() {
                         compact
@@ -214,7 +216,7 @@ impl Engine {
             geometry.row = 0;
             geometry.col = 0;
             geometry.sources.clear();
-            let key = key(&geometry, self.cell);
+            let key = key(&geometry, self.cell, &self.renderer);
             let spans = compact.get(&f.row).map(Vec::as_slice).unwrap_or(&[]);
             let col = crate::layout::shifted(f.col, spans);
             let width = spans
@@ -311,8 +313,9 @@ impl Engine {
 fn delete_pin(p: &Pin) -> String {
     format!("\x1b_Ga=d,d=i,i={},p={},q=2\x1b\\", p.id, p.placement)
 }
-fn key(f: &Formula, cell: (u16, u16)) -> String {
+fn key(f: &Formula, cell: (u16, u16), renderer: &str) -> String {
     let mut h = std::collections::hash_map::DefaultHasher::new();
+    renderer.hash(&mut h);
     f.hash(&mut h);
     cell.hash(&mut h);
     format!("{:016x}", h.finish())

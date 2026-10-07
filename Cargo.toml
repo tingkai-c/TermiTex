@@ -3,7 +3,8 @@ name = "termitex"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-description = "Experimental asynchronous math overlay for stock Codex in Ghostty"
+description = "TermiTex: asynchronous math rendering for stock Codex in Ghostty"
+repository = "https://github.com/tingkai-c/TermiTex"
 
 [dependencies]
 libc = "0.2"
@@ -13,6 +14,11 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.22"
 signal-hook = "0.3"
+toml = "0.9"
+ratex-render = { git = "https://github.com/erweixin/RaTeX", rev = "776c1d37bafa3bf445a0ab9377c55fe77f7a0133", features = ["embed-fonts"] }
+ratex-layout = { git = "https://github.com/erweixin/RaTeX", rev = "776c1d37bafa3bf445a0ab9377c55fe77f7a0133" }
+ratex-parser = { git = "https://github.com/erweixin/RaTeX", rev = "776c1d37bafa3bf445a0ab9377c55fe77f7a0133" }
+ratex-types = { git = "https://github.com/erweixin/RaTeX", rev = "776c1d37bafa3bf445a0ab9377c55fe77f7a0133" }
 
 [profile.release]
 lto = "thin"

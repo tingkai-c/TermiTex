@@ -1,59 +1,102 @@
-# termitex
+# TermiTex
 
-Experimental asynchronous terminal math rendering for stock Codex CLI in Ghostty on macOS. No custom Codex build.
+Asynchronous terminal math rendering for stock Codex CLI in Ghostty on macOS. No custom Codex build.
 
-**Status: early prototype.** Automated screen-model tests pass, and an initial user trial reported smooth scrolling in Ghostty. Rendering and layout remain under active development.
+**RaTeX is the default.** It runs natively in Rust with embedded math fonts, without Node.js. MathJax remains available as an explicitly selected alternative. TFormula is not a dependency.
+
+**Status: early prototype.** The native backend passed a representative rendering and failure-recovery gate, and both backends passed headless PTY scrolling/resize checks. This does not establish complete LaTeX compatibility or replace testing in live Ghostty. The earlier MathJax backend received positive user feedback on scrolling.
 
 ## Build and run
 
-Requires Rust (edition 2024), Node.js 20+, npm, Ghostty, and Codex CLI on PATH.
+Requires a recent Rust toolchain (tested with 1.95), Ghostty, and Codex CLI on PATH.
 
 ```sh
-npm ci --ignore-scripts
-cargo build --release
+cargo build --release --locked
 ./target/release/termitex
 ```
 
-With no arguments, launches `codex -c tui.rendering.math=false`. To pass Codex options:
+With no command, TermiTex launches `codex -c tui.rendering.math=false`. To pass Codex options:
 
 ```sh
 ./target/release/termitex -- codex -c tui.rendering.math=false --model MODEL
 ```
 
-Keep the checkout in place: the binary currently locates the worker relative to its build directory. Existing Codex and TFormula installations are not modified.
+The native binary embeds its math fonts and does not need the checkout or npm at runtime. Keep the bundled [font license and notices](licenses/) with redistributed binaries. Existing Codex installations are not modified.
+
+## Choose a renderer
+
+Create `~/.config/termitex/config.toml`, or `$XDG_CONFIG_HOME/termitex/config.toml` when that variable is set:
+
+```toml
+renderer = "ratex" # or "mathjax"
+```
+
+Selection precedence: **`--renderer` > `TERMITEX_RENDERER` > config file > RaTeX default**. Invalid renderer names and unknown config keys produce an error. See [config.example.toml](config.example.toml).
+
+```sh
+termitex --renderer ratex
+TERMITEX_RENDERER=mathjax termitex
+termitex --renderer mathjax -- codex -c tui.rendering.math=false
+```
+
+Options after `--` (or after the child command begins) belong to the child command.
+
+| Backend | Use it for | Requirements |
+|---|---|---|
+| RaTeX (default) | Standard math, matrices, aligned equations, chemistry; lower measured renderer overhead | Native binary only; system fonts for CJK fallback |
+| MathJax | MathJax-specific syntax/extensions, e.g. physics `\dv`, or a preferred appearance | Node.js 20+, npm dependencies, and the worker files in the build checkout |
+
+For MathJax, install its direct dependencies in the checkout:
+
+```sh
+npm ci --ignore-scripts
+./target/release/termitex --renderer mathjax
+```
+
+Only the selected worker is launched. There is **no automatic fallback**: unsupported or oversized formulas remain readable source text. Backend identity is included in image-cache keys. RaTeX uses KaTeX-compatible syntax and fonts; appearance and extension coverage differ from MathJax. Its default status reflects the tested standard-math cases, not full MathJax parity.
 
 ## Design
 
-Rust owns the PTY, screen model, formula detection, cache, and Kitty image placements. A single background Node worker calls **MathJax directly** for SVG and **resvg directly** for PNG output. TFormula is not a dependency. It prewarms MathJax and native rasterization at startup. This is not yet an all-Rust typesetter.
+Rust owns the PTY, screen model, formula detection, layout, cache, and Kitty image placements. Both backends use the same bounded request/response interface. RaTeX runs in an isolated native child process; MathJax uses a single prewarmed Node worker with direct MathJax/resvg calls. A renderer stall does not block the PTY loop; stalled workers are disabled after the existing timeout.
 
-- Only explicit math delimiters are detected: `\(…\)`, `\[…\]`, `$…$`, and `$$…$$`. Dollar inline math currently requires a math operator or command.
-- Inline images use their rendered width instead of reserving the entire LaTeX source width. Following prose moves left as native terminal text, retaining its styles and Unicode characters. A separate screen model tracks projected text so partial redraws and scrolling can be reconciled.
-- Inline canvas width is determined before rasterization: one PNG encoding pass, without Sharp cropping or a second raster-worker process. The backend caches final PNGs and SVGs with a 16 MiB memory budget and a checksummed, bounded 128 MiB disk cache owned by termitex. Cache failures fall back to rendering.
-- One outstanding render request bounds work. Output processing never waits for a render result. Results are matched to the current screen before placement.
-- Cached images are repositioned without rerunning MathJax. Synchronized output groups text and image placement updates.
-- Cache eviction targets 128 images / 64 MiB of encoded PNG data; currently visible images are retained.
+- Explicit delimiters: `\(…\)`, `\[…\]`, `$…$`, and `$$…$$`. Dollar inline math currently requires an operator or command.
+- Inline images use rendered width rather than LaTeX source width. Following prose moves left as native terminal text, preserving styles and Unicode.
+- Visible wrapped inline formulas are joined across at most nine source rows. The equation is placed intact on the row with the most room; other source fragments disappear. Partially visible formulas remain as text.
+- One outstanding render request bounds work. Delayed results are matched to the current viewport, and cached images move without typesetting again.
+- The shared image cache targets 128 images / 64 MiB of encoded PNGs, retaining currently visible images. MathJax additionally has a 16 MiB worker cache and a bounded 128 MiB checksummed disk cache. RaTeX uses its font/glyph caches and the shared session image cache; it does not currently persist final images between sessions.
 - Fenced code and the detected Codex input area are excluded heuristically.
 
-Moving typesetting off the PTY path does not by itself guarantee smooth scrolling. Screen parsing, image upload, placement, and Ghostty's own drawing still have costs. This prototype repositions overlays; it does not have privileged access to Codex's scroll model.
+## Limits and settings
 
-## Current limitations
+Targets Codex redraws in Ghostty, not arbitrary terminal applications or native terminal scrollback. Inline compaction does not reflow whole paragraphs. Composer detection depends on visible prompt markers. Indexed colors fall back to configured defaults. Large equations may be scaled or left as source; TermiTex does not allocate extra rows. Terminal control coverage and cursor edge cases need broader testing.
 
-Targets Codex redraws in Ghostty, not arbitrary terminal applications or native terminal scrollback. Fully visible inline formulas spanning up to nine source rows are joined and placed intact on the source row with the most room; remaining source fragments are removed. Blank lines, prompt markers, headings, and code fences stop continuation detection. Partially visible formulas remain as source text. Inline compaction stays within the original row; it does not reflow paragraphs. Composer detection depends on visible prompt markers. Indexed terminal colors fall back to configured defaults. Large formulas may be scaled or left as text; the wrapper does not allocate extra text rows. Terminal control coverage and cursor edge cases need broader testing. Malformed or long synchronized frames are released after a bounded wait. Do not assume every terminal application is transparently supported.
+`TERMITEX_FG` / `TERMITEX_BG` set hex colors (defaults `#ffffff` / `#282c34`). `TERMITEX_STATS=/tmp/termitex-stats.json` writes content-free counters at exit. MathJax-only options: `TERMITEX_PREWARM=0` disables prewarming; `TERMITEX_CACHE_DIR` overrides its cache directory (`~/Library/Caches/termitex/v1` by default on macOS). Legacy `TFORMULA_*` settings are not read.
 
-Defaults are white text on `#282c34`. Override with `TERMITEX_FG` / `TERMITEX_BG`. `TERMITEX_PREWARM=0` disables eager initialization for benchmarking. `TERMITEX_CACHE_DIR` overrides the cache directory (by default `~/Library/Caches/termitex/v1` on macOS). Legacy `TFORMULA_*` configuration is no longer read. `TERMITEX_STATS=/tmp/termitex-stats.json` writes counters at exit, without conversation text.
-
-## Checks
+## Validation
 
 ```sh
-cargo test
+cargo test --locked
+cargo fmt --check
+cargo build --release --locked
+python3 tests/native_worker.py       # Pillow needed for decoded-image checks
+python3 tests/pty_smoke.py ratex
+```
+
+Optional MathJax checks (after npm installation):
+
+```sh
 python3 tests/worker_smoke.py
 node tests/backend_pixels.mjs
 node tests/cache.mjs
-python3 tests/pty_smoke.py
+python3 tests/pty_smoke.py mathjax
 ```
 
-Tests cover delimiter detection, Unicode columns, composer/code exclusion, split synchronized redraws, a stalled worker, stale results after screen movement, inline compaction with native styles, wrapped inline math with both soft wraps and explicit row redraws, partial redraws, and avoiding redundant uploads/placements. The worker smoke test renders real inline and display equations. A headless PTY integration test checks actual image placement after a redraw. Nine representative equations have pinned reference-image checks captured from the previously pixel-verified pipeline. Cache persistence, corruption recovery, and memory bounds are also tested. These are not live Ghostty visual or scrolling benchmarks. See [backend measurements](benchmarks/README.md).
+The native gate covers 31 renders: Maxwell equations, fractions, integrals, probability, matrices, aligned/cases environments, chemistry, accents, custom macros, Chinese text, and changed cell metrics. It verifies PNG dimensions, visible ink, five invalid/unsupported inputs, and recovery, with Node absent from PATH. Representative images were visually inspected. PTY tests cover inline/wrapped placement across scrolling, redraws, and resizing. Rust tests cover configuration precedence, syntax detection, native color validation, stale responses, and native-text projection. These are not live Ghostty frame benchmarks.
+
+See [RaTeX comparison](benchmarks/ratex/README.md) for the isolated benchmark and its limitations, and [earlier backend measurements](benchmarks/README.md). Measurements exclude Codex and Ghostty and are not total-application guarantees.
 
 ## Attribution
 
-Originally inspired by [TFormula](https://github.com/mikewang817/TFormula), by Mike Wang. Small geometry, SVG-dimension, and TeX-compatibility helpers were adapted from its MIT-licensed code; its notice remains in `worker/TFORMULA-LICENSE`. No TFormula package, process, configuration, or cache is used at runtime or in tests. MathJax and resvg are direct dependencies with their own licenses. Termitex is MIT licensed.
+[RaTeX](https://github.com/erweixin/RaTeX) is pinned to commit `776c1d37bafa3bf445a0ab9377c55fe77f7a0133`. Its MIT notice and the embedded KaTeX fonts' OFL license/notices are in [licenses](licenses/).
+
+Originally inspired by [TFormula](https://github.com/mikewang817/TFormula), by Mike Wang. Small MathJax geometry, SVG-dimension, and TeX-compatibility helpers were adapted under MIT; the notice remains in `worker/TFORMULA-LICENSE`. No TFormula package, process, configuration, or cache is used. MathJax/resvg retain their own licenses. TermiTex is MIT licensed.

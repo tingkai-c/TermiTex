@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import pty
 import select
+import signal
 import struct
 import subprocess
 import sys
@@ -22,14 +23,19 @@ time.sleep(2)
 sys.stdout.write("\x1b[?2026h\x1b[2J\x1b[5;1HHello \\(x^2\\)\x1b[7;1HHere \\(\\partial/\r\n  \\partial t\\) means time.\x1b[?2026l")
 sys.stdout.flush()
 time.sleep(1)
+sys.stdout.write("\x1b[?2026h\x1b[2J\x1b[12;1HHello \\(x^2\\)\x1b[14;1HHere \\(\\partial/\r\n  \\partial t\\) means time.\x1b[?2026l")
+sys.stdout.flush()
+time.sleep(1)
 sys.stdout.write("\x1b[?1049l")
 sys.stdout.flush()
 '''
-proc = subprocess.Popen([str(root/'target/release/termitex'), '--', sys.executable, '-c', child],
+renderer_args=['--renderer',sys.argv[1]] if len(sys.argv)>1 else []
+proc = subprocess.Popen([str(root/'target/release/termitex'), *renderer_args, '--', sys.executable, '-c', child],
                         stdin=slave, stdout=slave, stderr=slave, close_fds=True)
 os.close(slave)
 output = bytearray()
 probe_sent = False
+resized = False
 try:
     deadline = time.monotonic() + 12
     while time.monotonic() < deadline:
@@ -47,6 +53,10 @@ try:
                 os.write(master, b'\x1b[6;34;16t')
                 # Probe emitted once in this test.
                 probe_sent = True
+            if b'\x1b[8;3H\x1b_Ga=p,' in output and not resized:
+                fcntl.ioctl(master,termios.TIOCSWINSZ,struct.pack('HHHH',20,80,1280,680))
+                os.kill(proc.pid,signal.SIGWINCH)
+                resized=True
         elif proc.poll() is not None:
             break
     assert proc.wait(timeout=2) == 0
@@ -54,7 +64,9 @@ try:
     assert output.count(b'\x1b_Ga=p,') >= 4, 'expected placements before and after redraw'
     assert b'\x1b[5;7H\x1b_Ga=p,' in output, 'image must move to current formula location'
     assert b'\x1b[8;3H\x1b_Ga=p,' in output, 'wrapped equation must render and move without resizing'
-    print('PTY: real worker produced placements before and after screen movement')
+    assert resized
+    assert b'\x1b[15;3H\x1b_Ga=p,' in output, 'wrapped placement must recover after resize'
+    print('PTY: inline/wrapped placements survived redraw, scrolling, and resize')
 finally:
     if proc.poll() is None:
         proc.kill()
