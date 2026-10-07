@@ -70,6 +70,8 @@ Rust owns the PTY, screen model, formula detection, layout, cache, and Kitty ima
 
 Targets Codex redraws in Ghostty, not arbitrary terminal applications or native terminal scrollback. Inline compaction does not reflow whole paragraphs. Runs of two or more source spaces are treated as alignment padding, preserving table columns while compacting math within each cell. Composer detection depends on visible prompt markers. Indexed colors fall back to configured defaults. Large equations may be scaled or left as source; TermiTex does not allocate extra rows. Terminal control coverage and cursor edge cases need broader testing.
 
+Unlike a source-preserving overlay, inline compaction rewrites displayed terminal cells and moves nearby prose. Mouse coordinates are forwarded unchanged, so clicking shifted content in a mouse-driven application may target the wrong original cell. Selection/copy sees projected text, not necessarily original LaTeX. Applications using terminal state our screen model does not fully represent (such as hyperlinks or advanced text attributes) may lose that state on repainted rows. Misdetected editable text and unsupported redraw behavior can disrupt interaction. Use with arbitrary editors or TUIs is not yet validated; the underlying application data is not directly rewritten.
+
 `TERMITEX_FG` / `TERMITEX_BG` set hex colors (defaults `#ffffff` / `#282c34`). `TERMITEX_STATS=/tmp/termitex-stats.json` writes content-free counters at exit. MathJax-only options: `TERMITEX_PREWARM=0` disables prewarming; `TERMITEX_CACHE_DIR` overrides its cache directory (`~/Library/Caches/termitex/v1` by default on macOS). Legacy `TFORMULA_*` settings are not read.
 
 ## Validation
@@ -78,18 +80,18 @@ Targets Codex redraws in Ghostty, not arbitrary terminal applications or native 
 cargo test --locked
 cargo fmt --check
 cargo build --release --locked
-python3 tests/native_worker.py       # Pillow needed for decoded-image checks
-python3 tests/pty_smoke.py ratex
 ```
 
 Optional MathJax checks (after npm installation):
 
 ```sh
-python3 tests/worker_smoke.py
+cargo test --locked --test workers mathjax -- --ignored
 node tests/backend_pixels.mjs
 node tests/cache.mjs
-python3 tests/pty_smoke.py mathjax
+cargo test --locked --test pty mathjax -- --ignored
 ```
+
+The Rust integration tests launch the Cargo-built binary; Python and Pillow are not needed for tests. Set `TERMITEX_TEST_ARTIFACTS=/tmp/termitex-qa` to save rendered PNGs and their source requests for visual inspection. Historical benchmark scripts still use Python.
 
 The native gate covers 31 renders: Maxwell equations, fractions, integrals, probability, matrices, aligned/cases environments, chemistry, accents, custom macros, Chinese text, and changed cell metrics. It verifies PNG dimensions, visible ink, five invalid/unsupported inputs, and recovery, with Node absent from PATH. Representative images were visually inspected. PTY tests cover inline/wrapped placement across scrolling, redraws, and resizing. Rust tests cover configuration precedence, syntax detection, native color validation, stale responses, and native-text projection. These are not live Ghostty frame benchmarks.
 

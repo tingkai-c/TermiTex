@@ -22,3 +22,6 @@ ratex-types = { git = "https://github.com/erweixin/RaTeX", rev = "776c1d37bafa3b
 
 [profile.release]
 lto = "thin"
+
+[dev-dependencies]
+png = "0.17.16"

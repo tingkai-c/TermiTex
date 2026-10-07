@@ -825,6 +825,7 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "libc",
+ "png",
  "ratex-layout",
  "ratex-parser",
  "ratex-render",

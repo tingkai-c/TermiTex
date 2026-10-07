@@ -1,0 +1,21 @@
+[
+  "\\nabla\\cdot\\mathbf{E}=\\frac{\\rho}{\\epsilon_0}",
+  "\\nabla\\cdot\\mathbf{B}=0",
+  "\\nabla\\times\\mathbf{E}=-\\frac{\\partial\\mathbf{B}}{\\partial t}",
+  "\\nabla\\times\\mathbf{B}=\\mu_0\\mathbf{J}+\\mu_0\\epsilon_0\\frac{\\partial\\mathbf{E}}{\\partial t}",
+  "c=\\frac{1}{\\sqrt{\\mu_0\\epsilon_0}}\\approx3.00\\times10^8\\,\\mathrm{m/s}",
+  "\\int_0^1x^2\\,dx=\\frac{1}{3}",
+  "\\sum_{k=1}^n k=\\frac{n(n+1)}{2}",
+  "\\frac{-b\\pm\\sqrt{b^2-4ac}}{2a}",
+  "P(A\\mid B)=\\frac{P(A\\cap B)}{P(B)}",
+  "\\begin{aligned}a&=b+c\\\\d&=e-f\\end{aligned}",
+  "f(x)=\\begin{cases}x^2&x\\ge0\\\\-x&x<0\\end{cases}",
+  "\\left(\\frac{a}{b}\\right)^2",
+  "\\operatorname{Var}(X)=\\mathbb{E}[X^2]-\\mathbb{E}[X]^2",
+  "\\ce{H2SO4 + 2NaOH -> Na2SO4 + 2H2O}",
+  "\\pu{1.5e-3 mol//L}",
+  "\\hat{x}+\\vec{v}+\\overline{AB}",
+  "\\boldsymbol{\\alpha}+\\mathcal{L}+\\mathbb{R}",
+  "\\newcommand{\\foo}[1]{#1^2}\\foo{x}",
+  "\\text{\u4e2d\u6587}+x"
+]
