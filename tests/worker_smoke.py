@@ -26,5 +26,8 @@ for req, response in zip(requests, responses):
     png = base64.b64decode(response['png'])
     assert png[:8] == b'\x89PNG\r\n\x1a\n'
     width, height = struct.unpack('>II', png[16:24])
-    assert width > 0 and height > 0
+    assert width == response['columns'] * req['cell_width']
+    assert height == req['formula']['rows'] * req['cell_height']
+    if not req['formula']['display']:
+        assert response['columns'] < req['formula']['cols'], 'inline canvas should shed source-width padding'
     print(f"{req['key']}: valid PNG {width}x{height}")

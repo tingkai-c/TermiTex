@@ -1,6 +1,7 @@
 mod detect;
 mod engine;
 mod frame;
+mod layout;
 use engine::{Engine, Request, Response};
 use frame::FrameGate;
 use std::{
@@ -204,6 +205,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let r = result.unwrap_or_else(|e| Response {
                 key,
                 png: String::new(),
+                columns: 0,
                 error: Some(e.to_string()),
             });
             if responses.send(r).is_err() {

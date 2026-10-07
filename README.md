@@ -2,7 +2,7 @@
 
 Experimental asynchronous terminal math rendering for stock Codex CLI in Ghostty on macOS. No custom Codex build.
 
-**Status: early prototype.** Automated screen-model tests pass; smooth scrolling and placement correctness in live Ghostty are not yet verified. This is not a finished replacement for TFormula.
+**Status: early prototype.** Automated screen-model tests pass, and an initial user trial reported smooth scrolling in Ghostty. Rendering and layout remain under active development. This is not a finished replacement for TFormula.
 
 ## Build and run
 
@@ -27,7 +27,7 @@ Keep the checkout in place: the binary currently locates the worker relative to 
 Rust owns the PTY, screen model, formula detection, cache, and Kitty image placements. A background Node worker uses **TFormula 0.3.1's MathJax renderer** to create PNGs. This is not yet an all-Rust typesetter.
 
 - Only explicit math delimiters are detected: `\(…\)`, `\[…\]`, `$…$`, and `$$…$$`. Dollar inline math currently requires a math operator or command.
-- Inline images cover the formula's own cells; surrounding prose is not rasterized.
+- Inline images use their rendered width instead of reserving the entire LaTeX source width. Following prose moves left as native terminal text, retaining its styles and Unicode characters. A separate screen model tracks projected text so partial redraws and scrolling can be reconciled.
 - One outstanding render request bounds work. Output processing never waits for a render result. Results are matched to the current screen before placement.
 - Cached images are repositioned without rerunning MathJax. Synchronized output groups text and image placement updates.
 - Cache eviction targets 128 images / 64 MiB of encoded PNG data; currently visible images are retained.
@@ -37,7 +37,7 @@ Moving typesetting off the PTY path does not by itself guarantee smooth scrollin
 
 ## Current limitations
 
-Targets Codex redraws in Ghostty, not arbitrary terminal applications or native terminal scrollback. Wrapped inline formulas and partially visible display blocks are not supported. Composer detection depends on visible prompt markers. Indexed terminal colors fall back to configured defaults. Large formulas may be scaled or left as text; the wrapper does not allocate extra text rows. Terminal control coverage and cursor edge cases need broader testing. Malformed or long synchronized frames are released after a bounded wait. Do not assume every terminal application is transparently supported.
+Targets Codex redraws in Ghostty, not arbitrary terminal applications or native terminal scrollback. Wrapped inline formulas and partially visible display blocks are not supported. Inline compaction stays within the original row; it does not reflow paragraphs. Composer detection depends on visible prompt markers. Indexed terminal colors fall back to configured defaults. Large formulas may be scaled or left as text; the wrapper does not allocate extra text rows. Terminal control coverage and cursor edge cases need broader testing. Malformed or long synchronized frames are released after a bounded wait. Do not assume every terminal application is transparently supported.
 
 Defaults are white text on `#282c34`. Override with `TERMITEX_FG` / `TERMITEX_BG`. `TERMITEX_TFORMULA` can point to an existing TFormula package directory. `TERMITEX_STATS=/tmp/termitex-stats.json` writes counters at exit, without conversation text.
 
@@ -49,7 +49,7 @@ python3 tests/worker_smoke.py
 python3 tests/pty_smoke.py
 ```
 
-Tests cover delimiter detection, Unicode columns, composer/code exclusion, split synchronized redraws, a stalled worker, stale results after screen movement, and avoiding redundant uploads/placements. The worker smoke test renders real inline and display equations. A headless PTY integration test checks actual image placement after a redraw. These are not live Ghostty visual or scrolling benchmarks.
+Tests cover delimiter detection, Unicode columns, composer/code exclusion, split synchronized redraws, a stalled worker, stale results after screen movement, inline compaction with native styles, partial redraws, and avoiding redundant uploads/placements. The worker smoke test renders real inline and display equations. A headless PTY integration test checks actual image placement after a redraw. These are not live Ghostty visual or scrolling benchmarks.
 
 ## Attribution
 

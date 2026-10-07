@@ -22,8 +22,11 @@ pub struct Response {
     pub png: String,
     #[serde(default)]
     pub error: Option<String>,
+    #[serde(default)]
+    pub columns: u16,
 }
 struct Image {
+    columns: u16,
     data: String,
     id: u32,
     uploaded: bool,
@@ -47,6 +50,8 @@ pub struct Stats {
 }
 pub struct Engine {
     pub parser: vt100::Parser,
+    physical: vt100::Parser,
+    has_projection: bool,
     pub stats: Stats,
     cache: HashMap<String, Image>,
     pins: HashMap<(u16, u16, u16, u16), Pin>,
@@ -72,6 +77,8 @@ impl Engine {
     ) -> Self {
         Self {
             parser: vt100::Parser::new(rows, cols, 0),
+            physical: vt100::Parser::new(rows, cols, 0),
+            has_projection: false,
             stats: Stats::default(),
             cache: HashMap::new(),
             pins: HashMap::new(),
@@ -90,6 +97,7 @@ impl Engine {
     }
     pub fn resize(&mut self, rows: u16, cols: u16) {
         self.parser.screen_mut().set_size(rows, cols);
+        self.physical.screen_mut().set_size(rows, cols);
         self.pins.clear();
         for i in self.cache.values_mut() {
             i.uploaded = false;
@@ -97,6 +105,7 @@ impl Engine {
     }
     pub fn accept(&mut self, bytes: &[u8], invalid: bool, moved: bool) -> String {
         self.parser.process(bytes);
+        self.physical.process(bytes);
         self.stats.batches += 1;
         let mut out = String::new();
         if invalid {
@@ -125,6 +134,7 @@ impl Engine {
                     r.key,
                     Image {
                         data: r.png,
+                        columns: r.columns,
                         id: self.next_id,
                         uploaded: false,
                         used: self.tick,
@@ -152,15 +162,51 @@ impl Engine {
         self.tick += 1;
         self.stats.scans += 1;
         let formulas = detect(self.parser.screen(), &self.fg, &self.bg);
+        let mut compact: HashMap<u16, Vec<crate::layout::Span>> = HashMap::new();
+        for f in &formulas {
+            if f.display || f.rows != 1 {
+                continue;
+            }
+            let mut geometry = f.clone();
+            geometry.row = 0;
+            geometry.col = 0;
+            if let Some(im) = self.cache.get(&key(&geometry, self.cell)) {
+                if im.columns > 0 && im.columns <= f.cols {
+                    compact
+                        .entry(f.row)
+                        .or_default()
+                        .push((f.col, f.cols, im.columns));
+                }
+            }
+        }
         let mut desired = HashMap::new();
         let mut out = String::new();
         let mut request = None;
+        if self.has_projection || !compact.is_empty() {
+            for row in 0..self.parser.screen().size().0 {
+                let spans = compact.get(&row).map(Vec::as_slice).unwrap_or(&[]);
+                out += &crate::layout::paint_row(
+                    self.parser.screen(),
+                    self.physical.screen(),
+                    row,
+                    spans,
+                );
+            }
+        }
+        self.has_projection = !compact.is_empty();
         for f in formulas {
             let mut geometry = f.clone();
             geometry.row = 0;
             geometry.col = 0;
             let key = key(&geometry, self.cell);
-            let pos = (f.row, f.col, f.rows, f.cols);
+            let spans = compact.get(&f.row).map(Vec::as_slice).unwrap_or(&[]);
+            let col = crate::layout::shifted(f.col, spans);
+            let width = spans
+                .iter()
+                .find(|(start, _, _)| *start == f.col)
+                .map(|(_, _, new)| *new)
+                .unwrap_or(f.cols);
+            let pos = (f.row, col, f.rows, width);
             if let Some(im) = self.cache.get_mut(&key) {
                 im.used = self.tick;
                 if !im.uploaded {
@@ -182,10 +228,10 @@ impl Engine {
                 out += &format!(
                     "\x1b[{};{}H\x1b_Ga=p,i={},p={},q=2,c={},r={},C=1,z={}\x1b\\",
                     f.row + 1,
-                    f.col + 1,
+                    col + 1,
                     p.id,
                     p.placement,
-                    f.cols,
+                    width,
                     f.rows,
                     Z
                 );
@@ -230,6 +276,7 @@ impl Engine {
             }
         }
         if !out.is_empty() {
+            out += &String::from_utf8(self.parser.screen().attributes_formatted()).unwrap();
             let (r, c) = self.parser.screen().cursor_position();
             out += &format!(
                 "\x1b[{};{}H",
@@ -237,6 +284,7 @@ impl Engine {
                 c.min(self.parser.screen().size().1 - 1) + 1
             );
         }
+        self.physical.process(out.as_bytes());
         self.stats.max_reconcile_us = self.stats.max_reconcile_us.max(t.elapsed().as_micros());
         out
     }
@@ -273,6 +321,69 @@ mod tests {
     use super::*;
     use std::sync::mpsc;
     #[test]
+    fn compact_prose_survives_partial_updates_and_scroll_without_rerender() {
+        let (tx, requests) = mpsc::sync_channel(1);
+        let (responses, rx) = mpsc::channel();
+        let mut e = Engine::new(30, 100, (16, 34), tx, rx);
+        e.accept(b"\x1b[?1049hHere \\(E\\) tells \\(B\\) more", false, false);
+        for _ in 0..2 {
+            let req = requests.recv().unwrap();
+            responses
+                .send(Response {
+                    key: req.key,
+                    png: STANDARD.encode([1, 2, 3]),
+                    columns: 2,
+                    error: None,
+                })
+                .unwrap();
+            e.poll();
+        }
+        assert!(
+            e.physical
+                .screen()
+                .contents()
+                .starts_with("Here    tells    more")
+        );
+        assert!(
+            e.parser
+                .screen()
+                .contents()
+                .starts_with("Here \\(E\\) tells \\(B\\) more")
+        );
+        let initial = e.stats.placements;
+        // A partial redraw writes to the child's original source coordinates.
+        e.accept(b"\x1b[1;24Hnext", false, false);
+        assert!(e.physical.screen().contents().contains("tells    next"));
+        let started = Instant::now();
+        for _ in 0..1000 {
+            assert!(e.accept(b"\x1b[25;1Hstatus", false, false).is_empty());
+        }
+        eprintln!(
+            "1000 cached inline reconciliations: {:?}",
+            started.elapsed()
+        );
+        assert_eq!(e.stats.placements, initial);
+        assert_eq!(e.stats.requests, 2);
+        // Scroll moves existing compact text too; projection must follow it.
+        e.accept(b"\x1b[1;1H\x1b[2L", false, true);
+        assert!(
+            e.physical
+                .screen()
+                .rows(0, 100)
+                .nth(2)
+                .unwrap()
+                .starts_with("Here    tells    next")
+        );
+        assert_eq!(e.stats.requests, 2);
+        assert_eq!(e.stats.uploads, 2);
+        // Replacing the formula row restores normal native text, without ghosts.
+        e.accept(b"\x1b[3;1H\x1b[2Kplain text", false, false);
+        assert_eq!(
+            e.physical.screen().rows(0, 100).nth(2).unwrap().trim_end(),
+            "plain text"
+        );
+    }
+    #[test]
     fn slow_worker_does_not_block_and_stale_results_use_current_position() {
         let (tx, requests) = mpsc::sync_channel(1);
         let (responses, rx) = mpsc::channel();
@@ -290,6 +401,7 @@ mod tests {
             .send(Response {
                 key: req.key,
                 png: STANDARD.encode([1, 2, 3]),
+                columns: 0,
                 error: None,
             })
             .unwrap();
