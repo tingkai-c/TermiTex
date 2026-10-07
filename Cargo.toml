@@ -1,0 +1,18 @@
+[package]
+name = "termitex"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Experimental asynchronous math overlay for stock Codex in Ghostty"
+
+[dependencies]
+libc = "0.2"
+vt100 = "0.16"
+vte = "0.14"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+signal-hook = "0.3"
+
+[profile.release]
+lto = "thin"
