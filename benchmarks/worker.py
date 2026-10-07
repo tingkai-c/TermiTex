@@ -5,7 +5,7 @@ worker=pathlib.Path(sys.argv[1]) if len(sys.argv)>1 else root/'worker/render.mjs
 delay=float(sys.argv[2]) if len(sys.argv)>2 else 0
 for trial in range(3):
     with tempfile.TemporaryDirectory(prefix='termitex-bench-') as cache:
-        env={**os.environ,'TFORMULA_CACHE_DIR':cache,'TERMITEX_TFORMULA':str(root/'node_modules/tformula')}
+        env={**os.environ,'TERMITEX_CACHE_DIR':cache}
         start=time.perf_counter()
         p=subprocess.Popen(['node',str(worker)],stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True,env=env)
         try:

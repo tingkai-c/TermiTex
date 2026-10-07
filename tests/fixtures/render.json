@@ -1,0 +1,155 @@
+[
+  {
+    "request": {
+      "key": "fixture",
+      "cell_width": 16,
+      "cell_height": 34,
+      "formula": {
+        "latex": "J",
+        "display": false,
+        "rows": 1,
+        "cols": 5,
+        "fg": "#f0e0d0",
+        "bg": "#282c34"
+      }
+    },
+    "columns": 2,
+    "sha256": "1d5cca9da69744e822f7199484a2330170df077167536681d3a1532bd3312bdb"
+  },
+  {
+    "request": {
+      "key": "fixture",
+      "cell_width": 16,
+      "cell_height": 34,
+      "formula": {
+        "latex": "\\rho",
+        "display": false,
+        "rows": 1,
+        "cols": 8,
+        "fg": "#f0e0d0",
+        "bg": "#282c34"
+      }
+    },
+    "columns": 2,
+    "sha256": "2534c3de4db86448476c709e32ba19ae328cdd4d1b3a973ea5f1e84419b63fcf"
+  },
+  {
+    "request": {
+      "key": "fixture",
+      "cell_width": 16,
+      "cell_height": 34,
+      "formula": {
+        "latex": "\\partial/\\partial t",
+        "display": false,
+        "rows": 1,
+        "cols": 12,
+        "fg": "#f0e0d0",
+        "bg": "#282c34"
+      }
+    },
+    "columns": 4,
+    "sha256": "75bbbf3c1557b12b42cd883fa9171cde1d7158f95605f13bffb69ec0844e5c52"
+  },
+  {
+    "request": {
+      "key": "fixture",
+      "cell_width": 16,
+      "cell_height": 34,
+      "formula": {
+        "latex": "e^{i\\pi}+1=0",
+        "display": false,
+        "rows": 1,
+        "cols": 24,
+        "fg": "#f0e0d0",
+        "bg": "#282c34"
+      }
+    },
+    "columns": 10,
+    "sha256": "ed062cb6528a6c870c0e3a9f0af717fdb4ec56cbd809b71e4a9b4cfd4c6d9e8d"
+  },
+  {
+    "request": {
+      "key": "fixture",
+      "cell_width": 16,
+      "cell_height": 34,
+      "formula": {
+        "latex": "\\frac{1}{2}",
+        "display": false,
+        "rows": 1,
+        "cols": 16,
+        "fg": "#f0e0d0",
+        "bg": "#282c34"
+      }
+    },
+    "columns": 2,
+    "sha256": "c7a71802517d7c191f6b17021c5b6d2b694d7c9b700789620761a654ee71fc15"
+  },
+  {
+    "request": {
+      "key": "fixture",
+      "cell_width": 16,
+      "cell_height": 34,
+      "formula": {
+        "latex": "\\displaystyle\\frac{1}{2}",
+        "display": true,
+        "rows": 3,
+        "cols": 80,
+        "fg": "#f0e0d0",
+        "bg": "#282c34"
+      }
+    },
+    "columns": 80,
+    "sha256": "7d2ff57668bc4507bb2bf6ffeb0e32100eed04539ee756bf8ce4e41499366ded"
+  },
+  {
+    "request": {
+      "key": "fixture",
+      "cell_width": 16,
+      "cell_height": 34,
+      "formula": {
+        "latex": "\\nabla\\times\\mathbf{B}=\\mu_0\\mathbf{J}",
+        "display": true,
+        "rows": 3,
+        "cols": 80,
+        "fg": "#f0e0d0",
+        "bg": "#282c34"
+      }
+    },
+    "columns": 80,
+    "sha256": "fe569b4995d6cf1e4f1d8866392d991a60b4a0a8201b775d40ef971d8096d5b0"
+  },
+  {
+    "request": {
+      "key": "fixture",
+      "cell_width": 16,
+      "cell_height": 34,
+      "formula": {
+        "latex": "\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}",
+        "display": true,
+        "rows": 4,
+        "cols": 80,
+        "fg": "#f0e0d0",
+        "bg": "#282c34"
+      }
+    },
+    "columns": 80,
+    "sha256": "73e588f5359cbffa3d41f58ded36a11d54c7392e496a2a7e76691150abe3909d"
+  },
+  {
+    "request": {
+      "key": "fixture",
+      "cell_width": 16,
+      "cell_height": 34,
+      "formula": {
+        "latex": "\\ce{H2O}",
+        "display": false,
+        "rows": 1,
+        "cols": 14,
+        "fg": "#f0e0d0",
+        "bg": "#282c34"
+      }
+    },
+    "columns": 5,
+    "sha256": "f9407c6b606f85e7bf7a158aa7328a0d58ef5e9c284bf18deec6491c986a90e8"
+  }
+]
