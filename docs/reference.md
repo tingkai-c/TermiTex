@@ -15,6 +15,14 @@ Rust owns the PTY, screen model, formula detection, layout, cache, and Kitty ima
 
 ## Limits and settings
 
+Developed on macOS with Ghostty; Kitty graphics support is required. Other terminals and applications need broader validation. The wrapper currently does not propagate the child program's exit code, so its exit status must not be used to determine whether the child succeeded.
+
+Compatibility mode preserves source cells and centers overlays. Wrapped inline formulas remain readable LaTeX in this mode to avoid covering neighboring prose. Input-area and code detection remain heuristic in both layouts.
+
+Only the selected renderer starts. There is no automatic fallback between RaTeX and MathJax: unsupported or oversized formulas remain source text. Their appearance and extension coverage differ.
+
+Homebrew builds from a pinned release and installs Rust as a build dependency; the first installation may take a few minutes. The package uses the project's own tap and includes the native renderer. MathJax requires a source checkout with Node and npm dependencies.
+
 Targets Codex redraws in Ghostty, not arbitrary terminal applications or native terminal scrollback. Inline compaction does not reflow whole paragraphs. Runs of two or more source spaces are treated as alignment padding, preserving table columns while compacting math within each cell. Composer detection depends on visible prompt markers. Indexed colors fall back to configured defaults. Large equations may be scaled or left as source; TermiTex does not allocate extra rows. Terminal control coverage and cursor edge cases need broader testing.
 
 In the default compact mode, inline compaction rewrites displayed terminal cells and moves nearby prose. Mouse coordinates are forwarded unchanged, so clicking shifted content in a mouse-driven application may target the wrong original cell. Selection/copy sees projected text, not necessarily original LaTeX. Applications using terminal state our screen model does not fully represent (such as hyperlinks or advanced text attributes) may lose that state on repainted rows. Misdetected editable text and unsupported redraw behavior can disrupt interaction. Use with arbitrary editors or TUIs is not yet validated; the underlying application data is not directly rewritten.

@@ -6,7 +6,6 @@
 <p align="center">A Rust math renderer for live CLI output. Built for stock Codex in Ghostty.</p>
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license"></a>
-  <img src="https://img.shields.io/badge/status-prototype-orange" alt="Early prototype">
   <img src="https://img.shields.io/badge/default_renderer-native_Rust-blue" alt="Native Rust renderer by default">
 </p>
 <p align="center">
@@ -17,14 +16,12 @@
   <a href="#contributing">Contributing</a>
 </p>
 
-Turn LaTeX in terminal output into typeset equations without a custom Codex build. TermiTex tracks the visible screen, renders math in a separate worker, and repositions cached images as the application redraws.
+Read equations where you work. TermiTex turns LaTeX in CLI output into beautifully typeset math, with native Rust rendering and equations that follow the conversation as you scroll. Launch it with one command—no custom Codex build.
 
 - **Native by default.** RaTeX renders with embedded math fonts; no Node.js or TFormula runtime required.
 - **Rendering stays off the input loop.** Cached equations move without being typeset again.
 - **Two layouts.** Compact math with native prose for Codex, or centered overlays that preserve source cells.
 - **Optional MathJax.** Select it for its appearance or extensions such as physics `\dv`.
-
-**Early prototype:** developed on macOS with Ghostty. Other terminal applications and terminals need broader testing. See [known limits](#known-limits).
 
 ## Quick start
 
@@ -35,7 +32,7 @@ brew install tingkai-c/tap/termitex
 termitex
 ```
 
-Homebrew builds the native renderer from a pinned release and installs Rust as a build dependency automatically. The initial install may take a few minutes; Node and npm are not required. This is our [project tap](https://github.com/tingkai-c/homebrew-tap), not a Homebrew/core formula.
+Homebrew handles the build and dependencies through our [official tap](https://github.com/tingkai-c/homebrew-tap). No Node or npm needed.
 
 To update later:
 
@@ -70,8 +67,6 @@ For another interactive program, opt into compatibility mode:
 termitex --layout compatibility -- your-program
 ```
 
-The native binary can run outside the checkout. Keep the [font licenses and notices](licenses/) with redistributed binaries. Existing Codex installations are not modified.
-
 ## Performance
 
 **TermiTex vs TFormula on the same headless terminal workload.** Each trial renders 12 equations, then repeats them.
@@ -88,16 +83,15 @@ The native binary can run outside the checkout. Keep the [font licenses and noti
 
 ## Comparison
 
-Different tools cover different workflows. Competitor capabilities below come from their upstream documentation, reviewed October 7, 2026; they are not results of our compatibility suite.
+Choose the workflow that fits your terminal.
 
-| Tool | Main workflow | Rendering and runtime | Performance evidence available here |
-| :--- | :--- | :--- | :--- |
-| **TermiTex / RaTeX** | Live PTY wrapper; compact or source-preserving layout | Native Rust worker; embedded math fonts | Live-wrapper placement and sampled memory measurements above |
-| **TermiTex / MathJax** | Same wrapper and layouts; alternative math syntax coverage | Node.js with MathJax/resvg | [Separate internal worker benchmark](benchmarks/ratex/README.md); not included above |
-| [**TFormula**](https://github.com/mikewang817/TFormula#tformula) | Live agent wrapper plus a document reader; source-preserving overlays and wrapped-formula slices | MathJax; reusable image placements and persistent caching | Live-wrapper placement and sampled memory measurements above; no live frame-time measurement |
-| [**TXM**](https://github.com/thatmagicalcat/txm#txm) | Render supplied LaTeX expressions; library/editor integration | Rust CLI and library; Python bindings available | Not benchmarked here; expression rendering is a different workload from live PTY tracking |
+| Tool | Workflow | Renderer |
+| :--- | :--- | :--- |
+| **TermiTex** | Live CLI math; compact layout or centered, source-preserving overlays | Native RaTeX by default; optional MathJax |
+| [**TFormula**](https://github.com/mikewang817/TFormula#tformula) | Live agent overlays and a document reader | MathJax |
+| [**TXM**](https://github.com/thatmagicalcat/txm#txm) | Expression rendering and library/editor integration | Rust rendering engine |
 
-[Detailed comparison and limitations](docs/comparison.md)
+[Full comparison](docs/comparison.md)
 
 ## Configuration
 
@@ -125,7 +119,7 @@ Precedence: **CLI > environment > config > default**. Options after `--`, or aft
 | Display math | Centered in its detected block | Centered in its detected block |
 | Underlying terminal text | Projected cells replace visible source | Original source cells remain intact |
 | Wrapped inline formulas | Joined when fully visible, up to nine source rows | Left as source to avoid covering neighboring prose |
-| Intended use | Codex in Ghostty | Trying other interactive applications; not universally validated |
+| Intended use | Codex in Ghostty | Preserving source text and coordinates |
 
 ### Use MathJax
 
@@ -136,17 +130,11 @@ npm ci --ignore-scripts
 ./target/release/termitex --renderer mathjax
 ```
 
-Only the selected worker starts. There is no automatic fallback: unsupported or oversized formulas remain source text. RaTeX and MathJax differ in appearance and extension coverage. [Rendering details and cache settings](docs/reference.md).
+Choose RaTeX for native rendering or MathJax for its appearance and extensions. [Renderer details](docs/reference.md).
 
-## Known limits
+## Documentation
 
-- Requires Kitty graphics support; development and testing focus on Ghostty/macOS. Native terminal scrollback is not fully supported.
-- Input-area and code detection are heuristic. Compatibility mode preserves coordinates but does not guarantee correctness in arbitrary editors or TUIs.
-- Compact mode changes visible text positions. Mouse clicks are forwarded at original coordinates, and copying may omit replaced LaTeX. It does not reflow entire paragraphs.
-- Large formulas may be scaled or left as source. TermiTex does not allocate extra rows. Indexed colors use configured defaults; advanced terminal attributes need broader coverage.
-- The wrapper currently does not propagate the child program's exit code. Do not use its exit status to determine whether the child succeeded.
-
-[Detailed behavior and limitations](docs/reference.md#limits-and-settings)
+[Rendering & compatibility](docs/reference.md) · [Benchmarks](benchmarks/competitors/README.md) · [Example configuration](config.example.toml)
 
 ## Contributing
 
@@ -168,10 +156,10 @@ node tests/backend_pixels.mjs
 node tests/cache.mjs
 ```
 
-Set `TERMITEX_TEST_ARTIFACTS=/tmp/termitex-qa` to save PNGs and source requests for inspection. Headless checks are not live Ghostty frame benchmarks.
+Set `TERMITEX_TEST_ARTIFACTS=/tmp/termitex-qa` to save PNGs and source requests for inspection.
 
 ## License and acknowledgments
 
-TermiTex is [MIT licensed](LICENSE). Native rendering uses [RaTeX](https://github.com/erweixin/RaTeX), pinned to `776c1d37bafa3bf445a0ab9377c55fe77f7a0133`; font notices are in [licenses/](licenses/).
+TermiTex is [MIT licensed](LICENSE). Native rendering uses [RaTeX](https://github.com/erweixin/RaTeX), pinned to `776c1d37bafa3bf445a0ab9377c55fe77f7a0133`; font notices are in [licenses/](licenses/). Include these notices when redistributing the native binary.
 
 Inspired by [TFormula](https://github.com/mikewang817/TFormula), by Mike Wang. Small MathJax geometry, SVG-dimension, and TeX-compatibility helpers were adapted under MIT; see [the retained notice](worker/TFORMULA-LICENSE). No TFormula package, process, configuration, or cache is used. MathJax/resvg retain their own licenses.
