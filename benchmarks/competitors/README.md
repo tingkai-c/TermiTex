@@ -28,6 +28,8 @@ The new/repeated figures are the median of each trial's median. Memory is the me
 
 ## Measurement and validation
 
+Placement means the image command reached the headless harness, not that Ghostty displayed a frame. The results include TFormula's default scan/stability scheduling; they do not establish pure typesetting speed or broad application compatibility.
+
 Launch latency starts before spawning the wrapper and ends when the first validated image placement arrives. Per-equation latency starts when that equation's `CASE` marker reaches the outer PTY. It therefore excludes any delay before the wrapper forwards that marker. Repeated formulas reuse each tool's normal caches; image upload counts need not be identical.
 
 The harness decodes every PNG, checks dimensions and visible light pixels, and requires a validated image before counting a placement. It saves images and the complete ANSI transcript. Representative integral output from both tools was visually inspected. These checks establish successful nonblank output, not pixel-equivalent fonts or complete mathematical correctness for arbitrary input.

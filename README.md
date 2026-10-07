@@ -74,7 +74,7 @@ The native binary can run outside the checkout. Keep the [font licenses and noti
 
 ## Performance
 
-**TermiTex vs TFormula, running the same live-terminal workload.** Both wrappers rendered all 24 cases in each trial: 12 different display equations, then the same 12 again.
+**TermiTex vs TFormula on the same headless terminal workload.** Each trial renders 12 equations, then repeats them.
 
 | Metric · median across 5 trials | TermiTex 0.1.0 · native, compatibility mode | TFormula 0.3.1 · default settings |
 | :--- | ---: | ---: |
@@ -84,11 +84,7 @@ The native binary can run outside the checkout. Keep the [font licenses and noti
 | Peak sampled process-tree RSS | **20.88 MiB** | 184.22 MiB |
 | Cases producing validated PNG placements per trial | 24 / 24 | 24 / 24 |
 
-Measured October 7, 2026, on macOS 26.6 / arm64 with Node 26.10.0. Five alternating trials, fresh application caches, a 100 × 30 synthetic terminal, and 16 × 34 px cells. Memory includes the wrapper, renderer descendants, and the identical fixture child; it excludes the benchmark controller and terminal emulator.
-
-**Scope:** placement means the image command reached our headless terminal harness—not that Ghostty displayed a frame. New/repeated latency starts when source text reaches that harness. TFormula's default scan/stability scheduling is included; this is not a pure typesetting-speed comparison. Process-tree RSS is sampled, can miss peaks, and can double-count shared pages. This is not a CPU-time or broad compatibility benchmark. TXM renders supplied expressions rather than wrapping this workload, so it is not assigned an incomparable timing.
-
-[Reproduce the comparison](benchmarks/competitors/README.md) · [Raw trials](benchmarks/competitors/results.jsonl) · [Earlier internal renderer benchmark](benchmarks/ratex/README.md)
+[Methodology, scope & reproduction](benchmarks/competitors/README.md) · [Raw results](benchmarks/competitors/results.jsonl)
 
 ## Comparison
 
@@ -101,9 +97,7 @@ Different tools cover different workflows. Competitor capabilities below come fr
 | [**TFormula**](https://github.com/mikewang817/TFormula#tformula) | Live agent wrapper plus a document reader; source-preserving overlays and wrapped-formula slices | MathJax; reusable image placements and persistent caching | Live-wrapper placement and sampled memory measurements above; no live frame-time measurement |
 | [**TXM**](https://github.com/thatmagicalcat/txm#txm) | Render supplied LaTeX expressions; library/editor integration | Rust CLI and library; Python bindings available | Not benchmarked here; expression rendering is a different workload from live PTY tracking |
 
-**How to read this:** TFormula's persistent cache can avoid repeat rendering across sessions; our native backend currently caches final images only within a session. TXM's expression renderer needs an integration layer to be evaluated on the same live-terminal workload. Runtime language alone cannot establish which complete application is faster or more compatible.
-
-These results establish lower placement latency and sampled memory for this workload and configuration. They do **not** establish broader compatibility or faster live scrolling. See [comparison scope](docs/comparison.md).
+[Detailed comparison and limitations](docs/comparison.md)
 
 ## Configuration
 
