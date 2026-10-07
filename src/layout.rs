@@ -85,18 +85,56 @@ impl Slot {
 }
 /// Source coordinates, original source width, and rendered width, in cells.
 pub type Span = (u16, u16, u16);
-pub fn shifted(col: u16, spans: &[Span]) -> u16 {
-    col - spans
-        .iter()
-        .filter(|(start, _, _)| *start < col)
-        .map(|(_, old, new)| old - new)
-        .sum::<u16>()
+/// Map original columns to projected columns. Runs of two or more source
+/// spaces are alignment padding: absorb any preceding math shrinkage there.
+/// Skip formula contents so spacing inside TeX never becomes an anchor.
+pub fn columns(source: &Screen, row: u16, spans: &[Span]) -> Vec<u16> {
+    let cols = source.size().1;
+    let mut positions: Vec<u16> = (0..=cols).collect();
+    if spans.is_empty() {
+        return positions;
+    }
+    let (mut c, mut projected) = (0, 0);
+    while c < cols {
+        positions[c as usize] = projected;
+        if let Some(&(_, old, new)) = spans.iter().find(|(start, _, _)| *start == c) {
+            c += old;
+            projected += new;
+        } else {
+            let start = c;
+            while c < cols
+                && !spans.iter().any(|(s, _, _)| *s == c)
+                && source.cell(row, c).is_some_and(|cell| {
+                    !cell.is_wide_continuation()
+                        && (cell.contents().is_empty() || cell.contents() == " ")
+                })
+            {
+                positions[c as usize] = projected;
+                c += 1;
+                projected += 1;
+            }
+            if c - start >= 2 {
+                projected = c;
+            }
+            if c == start {
+                c += 1;
+                projected += 1;
+            }
+        }
+    }
+    positions[cols as usize] = projected;
+    positions
 }
 pub fn paint_row(source: &Screen, physical: &Screen, row: u16, spans: &[Span]) -> String {
     let cols = source.size().1;
+    let positions = columns(source, row, spans);
     let mut desired = Vec::with_capacity(cols as usize);
     let mut c = 0;
     while c < cols {
+        let style = Style::of(source.cell(row, c).unwrap());
+        desired.resize_with(positions[c as usize] as usize, || {
+            Slot::blank(style.clone())
+        });
         if let Some(&(_, old, new)) = spans.iter().find(|(start, _, _)| *start == c) {
             let style = Style::of(source.cell(row, c).unwrap());
             desired.extend((0..new).map(|_| Slot::blank(style.clone())));
@@ -170,6 +208,9 @@ mod tests {
             physical.screen().contents().trim_end(),
             source.screen().contents().trim_end()
         );
-        assert_eq!(shifted(second, &spans), second - 6);
+        assert_eq!(
+            columns(source.screen(), 0, &spans)[second as usize],
+            second - 6
+        );
     }
 }

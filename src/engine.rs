@@ -218,7 +218,7 @@ impl Engine {
             geometry.sources.clear();
             let key = key(&geometry, self.cell, &self.renderer);
             let spans = compact.get(&f.row).map(Vec::as_slice).unwrap_or(&[]);
-            let col = crate::layout::shifted(f.col, spans);
+            let col = crate::layout::columns(self.parser.screen(), f.row, spans)[f.col as usize];
             let width = spans
                 .iter()
                 .find(|(start, _, _)| *start == f.col)
@@ -373,6 +373,52 @@ mod tests {
         e.accept(b"\x1b[4;1H\x1b[2K", false, false);
         assert!(e.pins.is_empty());
         assert!(e.physical.screen().contents().contains("partial/"));
+    }
+    #[test]
+    fn table_padding_keeps_columns_and_images_aligned_after_scroll() {
+        let (tx, requests) = mpsc::sync_channel(1);
+        let (responses, rx) = mpsc::channel();
+        let mut e = Engine::new(20, 100, (16, 34), tx, rx);
+        let left = r"\(\nabla\cdot\) - divergence";
+        let table = format!(
+            "\x1b[?1049h{:<40}Meaning\r\n{:<40}How \\(E\\) flows\r\n{:40}a point",
+            "Symbol", left, ""
+        );
+        e.accept(table.as_bytes(), false, false);
+        for _ in 0..2 {
+            let req = requests.recv().unwrap();
+            responses
+                .send(Response {
+                    key: req.key,
+                    png: STANDARD.encode([1, 2, 3]),
+                    columns: 2,
+                    error: None,
+                })
+                .unwrap();
+            e.poll();
+        }
+        for (row, text) in [(0, "Meaning"), (1, "How    flows"), (2, "a point")] {
+            let line = e.physical.screen().rows(0, 100).nth(row).unwrap();
+            assert!(line[40..].starts_with(text), "{line:?}");
+        }
+        assert!(e.pins.keys().any(|&(r, c, _, _)| r == 1 && c == 44));
+        assert!(
+            e.physical
+                .screen()
+                .rows(0, 100)
+                .nth(1)
+                .unwrap()
+                .starts_with("   - divergence")
+        );
+        e.accept(b"\x1b[1;1H\x1b[2L", false, true);
+        let line = e.physical.screen().rows(0, 100).nth(3).unwrap();
+        assert!(line[40..].starts_with("How    flows"));
+        assert!(e.pins.keys().any(|&(r, c, _, _)| r == 3 && c == 44));
+        assert_eq!(e.stats.requests, 2);
+        assert_eq!(e.stats.uploads, 2);
+        e.accept(b"\x1b[4;41HNow", false, false);
+        let line = e.physical.screen().rows(0, 100).nth(3).unwrap();
+        assert!(line[40..].starts_with("Now    flows"));
     }
     #[test]
     fn compact_prose_survives_partial_updates_and_scroll_without_rerender() {
