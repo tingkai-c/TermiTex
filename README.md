@@ -24,7 +24,7 @@ Read equations where you work. TermiTex turns LaTeX in CLI output into beautiful
 - **Optional MathJax.** Select it for its appearance or extensions such as physics `\dv`.
 
 <p align="center">
-  <img src="assets/termitex-demo.png" width="800" alt="TermiTex rendering Maxwell’s equations, derivatives, and inline math in Codex CLI inside Ghostty">
+  <img src="assets/termitex-demo-v2.png" width="800" alt="TermiTex rendering Maxwell’s equations, derivatives, and inline math in Codex CLI inside Ghostty">
 </p>
 <p align="center"><em>Maxwell’s equations, rendered directly in Codex CLI.</em></p>
 
