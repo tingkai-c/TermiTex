@@ -77,3 +77,26 @@ fn mathjax_worker_png_dimensions_and_compaction() {
         }
     }
 }
+
+fn compatibility_renders(command: Command) {
+    let requests: Vec<Value> = [("compat-inline", false, 1), ("compat-display", true, 3)].into_iter().map(|(key,display,rows)| json!({"key":key,"compatibility":true,"cell_width":16,"cell_height":34,"formula":{"latex":"x+x","row":0,"col":0,"rows":rows,"cols":30,"display":display,"fg":"#ffffff","bg":"#282c34"}})).collect();
+    let responses = support::responses(command, &requests);
+    for (req, response) in requests.iter().zip(&responses) {
+        support::check_png(req, response);
+    }
+}
+#[test]
+fn native_compatibility_centers_without_compacting() {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_termitex"));
+    command
+        .arg("--internal-ratex-worker")
+        .env("PATH", "/usr/bin:/bin");
+    compatibility_renders(command);
+}
+#[test]
+#[ignore = "requires Node.js and npm ci --ignore-scripts"]
+fn mathjax_compatibility_centers_without_compacting() {
+    let mut command = Command::new("node");
+    command.arg(concat!(env!("CARGO_MANIFEST_DIR"), "/worker/render.mjs"));
+    compatibility_renders(command);
+}

@@ -123,6 +123,36 @@ pub fn check_png(req: &Value, response: &Value) {
         "blank image: {}",
         req["formula"]["latex"]
     );
+    if req["compatibility"] == true {
+        assert_eq!(response["columns"], req["formula"]["cols"]);
+        let mut bounds = (info.width, info.height, 0, 0);
+        for (i, p) in pixels[..info.buffer_size()]
+            .chunks_exact(channels)
+            .enumerate()
+        {
+            if p[..3] != bg && (channels == 3 || p[3] > 0) {
+                let (x, y) = (i as u32 % info.width, i as u32 / info.width);
+                bounds.0 = bounds.0.min(x);
+                bounds.1 = bounds.1.min(y);
+                bounds.2 = bounds.2.max(x);
+                bounds.3 = bounds.3.max(y);
+            }
+        }
+        // Glyph side bearings may differ; a cell tolerance still catches a
+        // left-aligned raster or a cropped raster stretched to the source width.
+        assert!(
+            (bounds.0 as i64 + bounds.2 as i64 - info.width as i64).abs()
+                <= req["cell_width"].as_i64().unwrap(),
+            "not horizontally centered: {bounds:?}"
+        );
+        if req["formula"]["display"] == true {
+            assert!(
+                (bounds.1 as i64 + bounds.3 as i64 - info.height as i64).abs()
+                    <= req["cell_height"].as_i64().unwrap(),
+                "not vertically centered: {bounds:?}"
+            );
+        }
+    }
     // Optional lossless artifacts for visual inspection, using request keys as indices.
     if let Some(dir) = std::env::var_os("TERMITEX_TEST_ARTIFACTS") {
         let dir = std::path::PathBuf::from(dir);

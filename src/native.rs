@@ -78,13 +78,13 @@ pub fn render(req: &Request) -> Result<(Vec<u8>, u16), String> {
     }
     let font_size = (base * fit) as f32;
     let scale = font_size as f64;
-    let columns = if !f.display && f.rows == 1 {
+    let columns = if !req.compatibility && !f.display && f.rows == 1 {
         (((px + dl.width * scale) / req.cell_width as f64).ceil() as u16).clamp(1, f.cols)
     } else {
         f.cols
     };
     let canvas_width = columns as f64 * req.cell_width as f64;
-    let x = if f.display {
+    let x = if f.display || req.compatibility {
         ((canvas_width - dl.width * scale) / 2.0).max(0.0)
     } else {
         px

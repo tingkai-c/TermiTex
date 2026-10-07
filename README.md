@@ -55,6 +55,20 @@ npm ci --ignore-scripts
 
 Only the selected worker is launched. There is **no automatic fallback**: unsupported or oversized formulas remain readable source text. Backend identity is included in image-cache keys. RaTeX uses KaTeX-compatible syntax and fonts; appearance and extension coverage differ from MathJax. Its default status reflects the tested standard-math cases, not full MathJax parity.
 
+## Compatibility layout
+
+The default `compact` layout remains tuned for Codex. For other applications, opt into source-preserving overlays:
+
+```sh
+termitex --layout compatibility -- your-program
+```
+
+Or set `TERMITEX_LAYOUT=compatibility`, or `layout = "compatibility"` in the config file. Precedence is CLI > environment > config > `compact`. Use `--layout compact` to override a global compatibility setting.
+
+Compatibility mode leaves underlying text cells and surrounding prose at their original coordinates. Inline equations are horizontally centered within their original source spans, retaining the text baseline. Display equations are centered horizontally and vertically in their detected blocks. The full-size background canvas covers the LaTeX visually without stretching glyphs; source text remains in the terminal buffer for selection/copying (selection behavior depends on the terminal).
+
+Wrapped inline formulas remain source text in this mode: their disjoint spans cannot safely be covered by a single rectangular overlay. This mode reduces layout interference; it does not guarantee compatibility with every TUI. Formula/input detection is still heuristic, Kitty graphics is required, and native terminal scrollback is not fully supported.
+
 ## Design
 
 Rust owns the PTY, screen model, formula detection, layout, cache, and Kitty image placements. Both backends use the same bounded request/response interface. RaTeX runs in an isolated native child process; MathJax uses a single prewarmed Node worker with direct MathJax/resvg calls. A renderer stall does not block the PTY loop; stalled workers are disabled after the existing timeout.
@@ -70,7 +84,7 @@ Rust owns the PTY, screen model, formula detection, layout, cache, and Kitty ima
 
 Targets Codex redraws in Ghostty, not arbitrary terminal applications or native terminal scrollback. Inline compaction does not reflow whole paragraphs. Runs of two or more source spaces are treated as alignment padding, preserving table columns while compacting math within each cell. Composer detection depends on visible prompt markers. Indexed colors fall back to configured defaults. Large equations may be scaled or left as source; TermiTex does not allocate extra rows. Terminal control coverage and cursor edge cases need broader testing.
 
-Unlike a source-preserving overlay, inline compaction rewrites displayed terminal cells and moves nearby prose. Mouse coordinates are forwarded unchanged, so clicking shifted content in a mouse-driven application may target the wrong original cell. Selection/copy sees projected text, not necessarily original LaTeX. Applications using terminal state our screen model does not fully represent (such as hyperlinks or advanced text attributes) may lose that state on repainted rows. Misdetected editable text and unsupported redraw behavior can disrupt interaction. Use with arbitrary editors or TUIs is not yet validated; the underlying application data is not directly rewritten.
+In the default compact mode, inline compaction rewrites displayed terminal cells and moves nearby prose. Mouse coordinates are forwarded unchanged, so clicking shifted content in a mouse-driven application may target the wrong original cell. Selection/copy sees projected text, not necessarily original LaTeX. Applications using terminal state our screen model does not fully represent (such as hyperlinks or advanced text attributes) may lose that state on repainted rows. Misdetected editable text and unsupported redraw behavior can disrupt interaction. Use with arbitrary editors or TUIs is not yet validated; the underlying application data is not directly rewritten.
 
 `TERMITEX_FG` / `TERMITEX_BG` set hex colors (defaults `#ffffff` / `#282c34`). `TERMITEX_STATS=/tmp/termitex-stats.json` writes content-free counters at exit. MathJax-only options: `TERMITEX_PREWARM=0` disables prewarming; `TERMITEX_CACHE_DIR` overrides its cache directory (`~/Library/Caches/termitex/v1` by default on macOS). Legacy `TFORMULA_*` settings are not read.
 

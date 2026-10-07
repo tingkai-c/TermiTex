@@ -23,9 +23,9 @@ export async function render(req) {
  const svg=await typeset(f.latex,f.display,containerWidth,cache);
  const dimensions=readSvgDimensions(svg);
  const geometry=calculateFormulaGeometry({aspectRatio:dimensions.aspectRatio,naturalHeightEx:dimensions.heightEx,depthEx:dimensions.depthEx,
-  columns:f.cols,rows:f.rows,cell:caps.cell,scale:1,display:f.display,leftAlign:!f.display});
+  columns:f.cols,rows:f.rows,cell:caps.cell,scale:1,display:f.display,leftAlign:!f.display&&!req.compatibility});
  if(geometry.fitScale<0.4)throw Error('formula needs more vertical space');
- const columns=!f.display&&f.rows===1?Math.min(f.cols,Math.max(1,Math.ceil((geometry.offsetX+geometry.formulaWidth)/req.cell_width))):f.cols;
+ const columns=!req.compatibility&&!f.display&&f.rows===1?Math.min(f.cols,Math.max(1,Math.ceil((geometry.offsetX+geometry.formulaWidth)/req.cell_width))):f.cols;
  const canvas=`<svg xmlns="http://www.w3.org/2000/svg" width="${columns*req.cell_width}" height="${height}"><rect width="100%" height="100%" fill="${escape(f.bg)}"/><g color="${escape(f.fg)}" fill="${escape(f.fg)}">${nested(svg,geometry)}</g></svg>`;
  const key=cacheKey({termitex:'resvg-2.6.2-single-pass-v2',canvas});
  const png=await cache.get(key,async()=>{

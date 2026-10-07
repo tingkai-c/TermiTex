@@ -43,7 +43,7 @@ fn terminal_fixture() {
     std::io::stdout().flush().unwrap();
 }
 
-fn exercise(renderer: &str) {
+fn exercise(renderer: &str, compatibility: bool) {
     let (mut master, mut slave) = (-1, -1);
     assert_eq!(
         unsafe {
@@ -69,7 +69,17 @@ fn exercise(renderer: &str) {
     }
     let mut command = Command::new(env!("CARGO_BIN_EXE_termitex"));
     command
-        .args(["--renderer", renderer, "--"])
+        .args([
+            "--renderer",
+            renderer,
+            "--layout",
+            if compatibility {
+                "compatibility"
+            } else {
+                "compact"
+            },
+            "--",
+        ])
         .arg(std::env::current_exe().unwrap())
         .args(["--ignored", "--exact", "terminal_fixture", "--nocapture"])
         .env("TERMITEX_PTY_FIXTURE", "1")
@@ -107,10 +117,18 @@ fn exercise(renderer: &str) {
                 master.write_all(b"\x1b[6;34;16t").unwrap();
                 probe = true;
             }
-            let expected: &[u8] = match stage {
-                0 => b"\x1b[4;3H\x1b_Ga=p,",
-                1 => b"\x1b[8;3H\x1b_Ga=p,",
-                _ => b"\x1b[15;3H\x1b_Ga=p,",
+            let expected: &[u8] = if compatibility {
+                match stage {
+                    0 => b"\x1b[1;7H\x1b_Ga=p,",
+                    1 => b"\x1b[5;7H\x1b_Ga=p,",
+                    _ => b"\x1b[12;7H\x1b_Ga=p,",
+                }
+            } else {
+                match stage {
+                    0 => b"\x1b[4;3H\x1b_Ga=p,",
+                    1 => b"\x1b[8;3H\x1b_Ga=p,",
+                    _ => b"\x1b[15;3H\x1b_Ga=p,",
+                }
             };
             if stage < 3 && contains(&output, expected) {
                 if stage == 1 {
@@ -149,15 +167,25 @@ fn exercise(renderer: &str) {
             .windows(b"\x1b_Ga=p,".len())
             .filter(|w| *w == b"\x1b_Ga=p,")
             .count()
-            >= 4
+            >= if compatibility { 3 } else { 4 }
     );
 }
 #[test]
 fn native_pty_scroll_redraw_resize() {
-    exercise("ratex");
+    exercise("ratex", false);
 }
 #[test]
 #[ignore = "requires Node.js and npm ci --ignore-scripts"]
 fn mathjax_pty_scroll_redraw_resize() {
-    exercise("mathjax");
+    exercise("mathjax", false);
+}
+
+#[test]
+fn native_compatibility_pty_scroll_redraw_resize() {
+    exercise("ratex", true);
+}
+#[test]
+#[ignore = "requires Node.js and npm ci --ignore-scripts"]
+fn mathjax_compatibility_pty_scroll_redraw_resize() {
+    exercise("mathjax", true);
 }

@@ -123,7 +123,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     if args.first().is_some_and(|a| a == "--help" || a == "-h") {
         println!(
-            "TermiTex: asynchronous math rendering for Ghostty\ntermitex [--renderer ratex|mathjax] [--] command [args...]\nDefault renderer: ratex (native, no Node required).\nConfig: ~/.config/termitex/config.toml, renderer = \"ratex\" or \"mathjax\".\nPrecedence: --renderer > TERMITEX_RENDERER > config > default.\nUse: termitex\nTERMITEX_STATS=/path.json writes timing counters at exit.\nTERMITEX_FG / TERMITEX_BG override default colors.\nNo stock Codex modifications."
+            "TermiTex: asynchronous math rendering for Ghostty\ntermitex [--renderer ratex|mathjax] [--layout compact|compatibility] [--] command [args...]\nDefault renderer: ratex (native, no Node required).\nDefault layout: compact. Compatibility preserves text and centers overlays; TERMITEX_LAYOUT or config layout also selects it.\nConfig: ~/.config/termitex/config.toml, renderer = \"ratex\" or \"mathjax\".\nPrecedence: --renderer > TERMITEX_RENDERER > config > default.\nUse: termitex\nTERMITEX_STATS=/path.json writes timing counters at exit.\nTERMITEX_FG / TERMITEX_BG override default colors.\nNo stock Codex modifications."
         );
         return Ok(());
     }
@@ -229,6 +229,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     signal_hook::flag::register(libc::SIGWINCH, resize.clone())?;
     let mut engine = Engine::new(w.ws_row, w.ws_col, metrics, tx, rx);
     engine.renderer = renderer.name().into();
+    engine.compatibility = options.layout == config::Layout::Compatibility;
     engine.fg = std::env::var("TERMITEX_FG").unwrap_or(engine.fg);
     engine.bg = std::env::var("TERMITEX_BG").unwrap_or(engine.bg);
     let mut gate = FrameGate::new();

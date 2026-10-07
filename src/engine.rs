@@ -12,6 +12,8 @@ const Z: u32 = 20_270_001;
 pub struct Request {
     pub key: String,
     pub formula: Formula,
+    #[serde(default)]
+    pub compatibility: bool,
     pub cell_width: u16,
     pub cell_height: u16,
 }
@@ -67,6 +69,7 @@ pub struct Engine {
     pub bg: String,
     pub enabled: bool,
     pub renderer: String,
+    pub compatibility: bool,
 }
 impl Engine {
     pub fn new(
@@ -95,6 +98,7 @@ impl Engine {
             bg: "#282c34".into(),
             enabled: true,
             renderer: "ratex".into(),
+            compatibility: false,
         }
     }
     pub fn resize(&mut self, rows: u16, cols: u16) {
@@ -163,17 +167,27 @@ impl Engine {
         let t = Instant::now();
         self.tick += 1;
         self.stats.scans += 1;
-        let formulas = detect(self.parser.screen(), &self.fg, &self.bg);
+        let formulas: Vec<_> = detect(self.parser.screen(), &self.fg, &self.bg)
+            .into_iter()
+            // A wrapped inline formula has disjoint source spans. A rectangular
+            // overlay could hide neighboring prose; keep those as source here.
+            .filter(|f| !self.compatibility || f.sources.is_empty())
+            .collect();
         let mut compact: HashMap<u16, Vec<crate::layout::Span>> = HashMap::new();
         for f in &formulas {
-            if f.display || f.rows != 1 {
+            if self.compatibility || f.display || f.rows != 1 {
                 continue;
             }
             let mut geometry = f.clone();
             geometry.row = 0;
             geometry.col = 0;
             geometry.sources.clear();
-            if let Some(im) = self.cache.get(&key(&geometry, self.cell, &self.renderer)) {
+            if let Some(im) = self.cache.get(&key(
+                &geometry,
+                self.cell,
+                &self.renderer,
+                self.compatibility,
+            )) {
                 if im.columns > 0 && im.columns <= f.cols {
                     if f.sources.is_empty() {
                         compact
@@ -216,7 +230,7 @@ impl Engine {
             geometry.row = 0;
             geometry.col = 0;
             geometry.sources.clear();
-            let key = key(&geometry, self.cell, &self.renderer);
+            let key = key(&geometry, self.cell, &self.renderer, self.compatibility);
             let spans = compact.get(&f.row).map(Vec::as_slice).unwrap_or(&[]);
             let col = crate::layout::columns(self.parser.screen(), f.row, spans)[f.col as usize];
             let width = spans
@@ -258,6 +272,7 @@ impl Engine {
                 request = Some(Request {
                     key,
                     formula: f,
+                    compatibility: self.compatibility,
                     cell_width: self.cell.0,
                     cell_height: self.cell.1,
                 });
@@ -294,7 +309,9 @@ impl Engine {
             }
         }
         if !out.is_empty() {
-            out += &String::from_utf8(self.parser.screen().attributes_formatted()).unwrap();
+            if !self.compatibility {
+                out += &String::from_utf8(self.parser.screen().attributes_formatted()).unwrap();
+            }
             let (r, c) = self.parser.screen().cursor_position();
             out += &format!(
                 "\x1b[{};{}H",
@@ -313,9 +330,10 @@ impl Engine {
 fn delete_pin(p: &Pin) -> String {
     format!("\x1b_Ga=d,d=i,i={},p={},q=2\x1b\\", p.id, p.placement)
 }
-fn key(f: &Formula, cell: (u16, u16), renderer: &str) -> String {
+fn key(f: &Formula, cell: (u16, u16), renderer: &str, compatibility: bool) -> String {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     renderer.hash(&mut h);
+    compatibility.hash(&mut h);
     f.hash(&mut h);
     cell.hash(&mut h);
     format!("{:016x}", h.finish())
@@ -339,6 +357,57 @@ fn upload(id: u32, png: &str) -> String {
 mod tests {
     use super::*;
     use std::sync::mpsc;
+    #[test]
+    fn compatibility_preserves_source_cells_and_skips_wrapped_inline() {
+        let (tx, requests) = mpsc::sync_channel(1);
+        let (responses, rx) = mpsc::channel();
+        let mut e = Engine::new(20, 80, (16, 34), tx, rx);
+        e.compatibility = true;
+        e.accept(
+            b"\x1b[?1049hHere \\(\\rho\\) is \x1b[1mcharge\x1b[0m.",
+            false,
+            false,
+        );
+        let req = requests.recv().unwrap();
+        assert!(req.compatibility);
+        responses
+            .send(Response {
+                key: req.key,
+                png: STANDARD.encode([1, 2, 3]),
+                columns: req.formula.cols,
+                error: None,
+            })
+            .unwrap();
+        let out = e.poll();
+        assert!(out.contains("c=8,r=1"));
+        assert!(!out.contains("\x1b[0")); // No attribute resets or row repaint.
+        assert_eq!(
+            e.parser.screen().contents_formatted(),
+            e.physical.screen().contents_formatted()
+        );
+        assert!(!e.has_projection);
+        e.accept(b"\x1b[1;1H\x1b[2L", false, true);
+        assert_eq!(
+            e.parser.screen().contents_formatted(),
+            e.physical.screen().contents_formatted()
+        );
+        assert!(
+            e.pins
+                .keys()
+                .any(|&(r, c, _, w)| r == 2 && c == 5 && w == 8)
+        );
+        assert_eq!(e.stats.requests, 1);
+        e.accept(
+            b"\x1b[5;1HHere \\(\\partial/\r\n  \\partial t\\) means time.",
+            false,
+            false,
+        );
+        assert!(requests.try_recv().is_err());
+        assert_eq!(
+            e.parser.screen().contents_formatted(),
+            e.physical.screen().contents_formatted()
+        );
+    }
     #[test]
     fn wrapped_source_fragments_are_removed_and_scroll_as_one_equation() {
         let (tx, requests) = mpsc::sync_channel(1);

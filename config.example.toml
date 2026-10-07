@@ -1,3 +1,6 @@
 # Copy to ~/.config/termitex/config.toml (or $XDG_CONFIG_HOME/termitex/config.toml).
 # Default: native RaTeX. MathJax requires Node.js and npm ci in the checkout.
 renderer = "ratex" # "ratex" or "mathjax"
+
+# Keep compact for Codex; compatibility preserves source cells and centers overlays.
+layout = "compact" # "compact" or "compatibility"
