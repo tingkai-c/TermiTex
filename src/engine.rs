@@ -43,7 +43,7 @@ pub struct Engine {
     cache: HashMap<String, Image>,
     pins: HashMap<(u16, u16, u16, u16), Pin>,
     failed: HashSet<String>,
-    inflight: Option<(String, Instant)>,
+    inflight: HashMap<String, Instant>,
     renderer_backend: Box<dyn MathRenderer>,
     graphics: Box<dyn GraphicsBackend>,
     next_id: u32,
@@ -72,7 +72,7 @@ impl Engine {
             cache: HashMap::new(),
             pins: HashMap::new(),
             failed: HashSet::new(),
-            inflight: None,
+            inflight: HashMap::new(),
             renderer_backend,
             graphics,
             next_id: 1_800_000_000,
@@ -89,7 +89,7 @@ impl Engine {
     pub fn stop_renderer(&mut self) {
         self.enabled = false;
         self.renderer_backend.stop();
-        self.inflight = None;
+        self.inflight.clear();
     }
     #[cfg(test)]
     fn new(
@@ -116,6 +116,7 @@ impl Engine {
         }
     }
     pub fn accept(&mut self, bytes: &[u8], invalid: bool, moved: bool) -> String {
+        self.collect_completions();
         self.parser.process(bytes);
         self.physical.process(bytes);
         self.stats.batches += 1;
@@ -133,10 +134,20 @@ impl Engine {
         }
         out + &self.reconcile()
     }
-    pub fn poll(&mut self) -> String {
+    pub fn completion_fd(&self) -> Option<std::os::fd::RawFd> {
+        if self.enabled {
+            self.renderer_backend.completion_fd()
+        } else {
+            None
+        }
+    }
+    fn collect_completions(&mut self) -> bool {
+        // Clear before draining responses so a concurrent completion cannot
+        // lose its wakeup. Drain every ready result before a single reconcile.
+        self.renderer_backend.clear_notification();
         let mut changed = false;
         while let Some(r) = self.renderer_backend.poll() {
-            self.inflight = None;
+            self.inflight.remove(&r.key);
             if r.error.is_some() || r.png.len() > 16_777_216 || STANDARD.decode(&r.png).is_err() {
                 self.failed.insert(r.key);
                 self.stats.failures += 1;
@@ -155,16 +166,17 @@ impl Engine {
             }
             changed = true;
         }
-        if changed {
+        changed
+    }
+    pub fn poll(&mut self) -> String {
+        if self.collect_completions() {
             self.reconcile()
         } else {
             String::new()
         }
     }
     pub fn worker_stalled(&self) -> bool {
-        self.inflight
-            .as_ref()
-            .is_some_and(|(_, t)| t.elapsed().as_secs() > 20)
+        self.inflight.values().any(|t| t.elapsed().as_secs() > 20)
     }
     pub fn reconcile(&mut self) -> String {
         if !self.enabled {
@@ -218,7 +230,7 @@ impl Engine {
         }
         let mut desired = HashMap::new();
         let mut out = String::new();
-        let mut request = None;
+        let mut accepting = true;
         if self.has_projection || !compact.is_empty() {
             for row in 0..self.parser.screen().size().0 {
                 let spans = compact.get(&row).map(Vec::as_slice).unwrap_or(&[]);
@@ -274,14 +286,24 @@ impl Engine {
                     },
                 );
                 self.stats.placements += 1;
-            } else if request.is_none() && !self.failed.contains(&key) {
-                request = Some(Request {
-                    key,
+            } else if accepting
+                && self.inflight.len() < self.renderer_backend.capacity()
+                && !self.failed.contains(&key)
+                && !self.inflight.contains_key(&key)
+            {
+                let request = Request {
+                    key: key.clone(),
                     formula: f,
                     compatibility: self.compatibility,
                     cell_width: self.cell.0,
                     cell_height: self.cell.1,
-                });
+                };
+                if self.renderer_backend.submit(request) {
+                    self.inflight.insert(key, Instant::now());
+                    self.stats.requests += 1;
+                } else {
+                    accepting = false;
+                }
             }
         }
         // Remove obsolete pins, not shared uploaded rasters.
@@ -291,15 +313,6 @@ impl Engine {
             }
         }
         self.pins = desired;
-        if self.inflight.is_none() {
-            if let Some(r) = request {
-                let key = r.key.clone();
-                if self.renderer_backend.submit(r) {
-                    self.inflight = Some((key, Instant::now()));
-                    self.stats.requests += 1;
-                }
-            }
-        }
         let mut bytes: usize = self.cache.values().map(|i| i.data.len()).sum();
         while self.cache.len() > 128 || bytes > 64 * 1024 * 1024 {
             let victim = self
@@ -345,6 +358,60 @@ fn key(f: &Formula, cell: (u16, u16), renderer: &str, compatibility: bool) -> St
 mod tests {
     use super::*;
     use std::sync::mpsc;
+    #[test]
+    fn parallel_results_are_batched_deduplicated_and_placed_at_current_rows() {
+        struct Pair(crate::renderer::ChannelRenderer);
+        impl MathRenderer for Pair {
+            fn submit(&mut self, r: Request) -> bool {
+                self.0.submit(r)
+            }
+            fn poll(&mut self) -> Option<Response> {
+                self.0.poll()
+            }
+            fn stop(&mut self) {}
+            fn capacity(&self) -> usize {
+                2
+            }
+        }
+        let (tx, requests) = mpsc::sync_channel(2);
+        let (responses, rx) = mpsc::channel();
+        let mut e = Engine::with_backends(
+            20,
+            80,
+            (16, 34),
+            Box::new(Pair(crate::renderer::ChannelRenderer { tx, rx })),
+            Box::new(crate::graphics::KittyGraphics),
+        );
+        e.accept(b"\\(a\\) and \\(a\\)\r\n\\(b\\)\r\n\\(c\\)", false, false);
+        let a = requests.try_recv().unwrap();
+        let b = requests.try_recv().unwrap();
+        assert_ne!(a.key, b.key);
+        assert!(requests.try_recv().is_err());
+        assert_eq!(e.inflight.len(), 2);
+        // Complete in reverse order, with both results ready in one event turn.
+        for req in [&b, &a] {
+            responses
+                .send(Response {
+                    key: req.key.clone(),
+                    png: STANDARD.encode([1, 2, 3]),
+                    columns: 1,
+                    error: None,
+                })
+                .unwrap();
+        }
+        let scans = e.stats.scans;
+        // Child movement and completions share one layout pass.
+        e.accept(b"\x1b[1;1H\x1b[2L", false, true);
+        assert_eq!(e.stats.scans, scans + 1);
+        assert_eq!(e.stats.uploads, 2);
+        assert_eq!(e.stats.placements, 3);
+        assert!(e.pins.keys().all(|(row, _, _, _)| *row >= 2));
+        assert_eq!(e.inflight.len(), 1);
+        assert_eq!(requests.try_recv().unwrap().formula.latex, "c");
+        assert!(requests.try_recv().is_err());
+        assert!(e.poll().is_empty());
+        assert_eq!(e.stats.scans, scans + 1);
+    }
     #[test]
     fn compatibility_preserves_source_cells_and_skips_wrapped_inline() {
         let (tx, requests) = mpsc::sync_channel(1);
@@ -553,7 +620,7 @@ mod tests {
         for _ in 0..32 {
             e.accept(b"\x1b[25;1Hstatus", false, false);
         }
-        assert!(e.inflight.is_some());
+        assert!(!e.inflight.is_empty());
         assert!(requests.try_recv().is_err());
         assert_eq!(e.stats.requests, 1);
         e.accept(b"\x1b[2J\x1b[5;1H\\[\r\nx^2\r\n\\]", true, false);

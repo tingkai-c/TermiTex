@@ -4,13 +4,13 @@
 
 ## Design
 
-Rust owns the PTY, screen model, formula detection, layout, cache, and Kitty image placements. Both backends use the same bounded request/response interface. RaTeX runs in an isolated native child process; MathJax uses a single prewarmed Node worker with direct MathJax/resvg calls. A renderer stall does not block the PTY loop; stalled workers are disabled after the existing timeout.
+Rust owns the PTY, screen model, formula detection, layout, cache, and Kitty image placements. Both backends use the same bounded request/response interface. The renderer pool uses two isolated native RaTeX processes or two Node workers with direct MathJax/resvg calls. Each has at most one request in flight; ready results wake the PTY loop and are applied together. A renderer stall does not block the PTY loop; stalled workers are disabled after the existing timeout.
 
 - Explicit delimiters: `\(…\)`, `\[…\]`, `$…$`, and `$$…$$`. Dollar inline math currently requires an operator or command.
 - In compact mode, inline images use rendered width rather than LaTeX source width. Following prose moves left as native terminal text, preserving styles and Unicode.
 - In compact mode, visible wrapped inline formulas are joined across at most nine source rows. The equation is placed intact on the row with the most room; other source fragments disappear. Partially visible formulas remain as text.
 - One outstanding render request bounds work. Delayed results are matched to the current viewport, and cached images move without typesetting again.
-- The shared image cache targets 128 images / 64 MiB of encoded PNGs, retaining currently visible images. MathJax additionally has a 16 MiB worker cache and a bounded 128 MiB checksummed disk cache. RaTeX uses its font/glyph caches and the shared session image cache; it does not currently persist final images between sessions.
+- The shared image cache targets 128 images / 64 MiB of encoded PNGs, retaining currently visible images. Each MathJax worker additionally has a 16 MiB memory cache and a bounded 128 MiB checksummed disk cache. RaTeX uses its font/glyph caches and the shared session image cache; it does not currently persist final images between sessions.
 - Fenced code and the detected Codex input area are excluded heuristically.
 
 ## Limits and settings

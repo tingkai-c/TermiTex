@@ -8,7 +8,7 @@ flowchart LR
     Session --> Probe[TerminalProbe]
     Session --> Engine[Screen and layout engine]
     Engine --> Renderer[MathRenderer]
-    Renderer --> Worker[RaTeX or MathJax worker]
+    Renderer --> Worker[Two RaTeX or MathJax workers]
     Worker --> Renderer
     Renderer --> Engine
     Engine --> Graphics[GraphicsBackend]
@@ -20,7 +20,9 @@ flowchart LR
 
 - `TerminalProbe` produces queries, consumes replies, reports capabilities, and returns unrelated user input. `KittyProbe` checks graphics transport, pixel cell size, default foreground/background colors, and synchronized updates. Probing has a 500 ms deadline and a 64 KiB input bound. Environment variables identify the terminal for reports; they do not enable graphics.
 - `GraphicsBackend` encodes upload, placement, removal, release, and cleanup operations. It returns commands rather than writing to stdout. `KittyGraphics` is the shared implementation. Layout supplies rectangles and image identifiers; it never constructs graphics escape sequences.
-- `MathRenderer` exposes nonblocking submission and polling plus worker shutdown. `WorkerRenderer` owns an isolated renderer process and a bounded request channel. The I/O thread can wait for a response without blocking terminal input. Tests substitute `ChannelRenderer`.
+- `MathRenderer` exposes nonblocking submission, completion polling, capacity, a completion notification descriptor, and shutdown. `RenderPool` owns two isolated `WorkerRenderer` processes, with one outstanding request per process. Their I/O threads notify a shared nonblocking Unix datagram socket after queuing a response, waking the session poll immediately. Tests substitute `ChannelRenderer`.
+
+The engine tracks outstanding requests by cache key, so duplicate expressions share a render and out-of-order completions cannot clear another request. It drains ready results before one reconciliation, also folding ready results into incoming child-output updates. Completed child frames remain the boundary for painting; all terminal writes stay ordered on the session thread. There is no timer added to wait for a batch, no queue reprioritization, and no cancellation policy. Two processes increase renderer memory relative to one, especially for MathJax.
 
 The session is the composition root: it chooses implementations and owns terminal I/O ordering, raw-mode restoration, resizing, signals, and the child exit code. The engine owns detection, compact/compatibility layout, placement reconciliation, and the image cache. Renderer request/response types live in `renderer.rs`; neither typesetting backend knows which terminal will display its output.
 
@@ -37,3 +39,9 @@ Application heuristics (such as the Codex input-area exclusion) remain in detect
 ## Validation
 
 Unit tests cover split/reordered replies, unrelated input preservation, layout, caching, and worker delays. PTY tests exercise negotiation, unsupported-terminal passthrough, exit codes, terminal restoration, rendering, scrolling redraws, and resizing. CI builds native binaries for macOS and Linux on x86-64 and ARM64, and launches Kitty/Konsole in Xvfb for protocol smoke tests. Actual visual behavior is tracked separately in [terminal compatibility](terminals.md).
+
+## Rendering pipeline benchmark
+
+Run `cargo run --release --example render_pipeline_bench`. This exercises actual native worker processes and completion descriptors with 24 uncached display equations after a warmup, seven fresh-pool trials per configuration. It compares simulated 4 ms polling against event-driven completion, then one versus two workers. It asserts successful unique responses and bounded completion waits; timings are observations, not CI thresholds.
+
+Local macOS arm64 medians: 120.08 ms with one worker and simulated polling, 5.24 ms with one worker and wakeups, 2.81 ms with two workers and wakeups. This isolates scheduling and rendering; it excludes PTY parsing, terminal image upload, emulator display, and startup. It does not measure scrolling frame rate, CPU savings, or memory savings. The polling baseline simulates an idle terminal loop; real incoming terminal events can wake that loop sooner.

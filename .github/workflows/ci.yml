@@ -31,6 +31,8 @@ jobs:
       - run: cargo fmt --check
       - run: cargo test --locked
       - run: cargo build --release --locked
+      - name: Exercise bounded rendering pool and completion wakeups
+        run: cargo run --release --locked --example render_pipeline_bench
       - name: Package binary and licenses
         shell: bash
         run: |

@@ -23,7 +23,12 @@ pub struct Response {
 
 use std::{
     io::{self, BufRead, BufReader, Read, Write},
+    os::{
+        fd::{AsRawFd, RawFd},
+        unix::net::UnixDatagram,
+    },
     process::{Child, Command, Stdio},
+    sync::Arc,
     sync::mpsc::{self, Receiver, SyncSender},
 };
 
@@ -32,6 +37,13 @@ pub trait MathRenderer {
     fn submit(&mut self, request: Request) -> bool;
     fn poll(&mut self) -> Option<Response>;
     fn stop(&mut self);
+    fn capacity(&self) -> usize {
+        1
+    }
+    fn completion_fd(&self) -> Option<RawFd> {
+        None
+    }
+    fn clear_notification(&self) {}
 }
 
 pub struct ChannelRenderer {
@@ -53,7 +65,7 @@ pub struct WorkerRenderer {
     child: Child,
 }
 impl WorkerRenderer {
-    pub fn spawn(renderer: Renderer) -> io::Result<Self> {
+    fn spawn(renderer: Renderer, notify: Arc<UnixDatagram>) -> io::Result<Self> {
         let mut command = match renderer {
             Renderer::Ratex => {
                 let mut cmd = Command::new(std::env::current_exe()?);
@@ -102,6 +114,8 @@ impl WorkerRenderer {
                 if responses.send(r).is_err() {
                     break;
                 }
+                // A full nonblocking socket already has a wakeup pending.
+                let _ = notify.send(&[1]);
             }
         });
         Ok(Self {
@@ -125,5 +139,77 @@ impl MathRenderer for WorkerRenderer {
 impl Drop for WorkerRenderer {
     fn drop(&mut self) {
         self.stop();
+    }
+}
+
+/// Two isolated workers, with at most one outstanding request per worker.
+/// All completions wake the same event-loop descriptor; terminal writes remain
+/// on the session thread. No render work is queued beyond the active slots.
+pub struct RenderPool {
+    workers: Vec<(WorkerRenderer, bool)>,
+    notification: UnixDatagram,
+}
+impl RenderPool {
+    pub fn spawn(renderer: Renderer) -> io::Result<Self> {
+        Self::with_size(renderer, 2)
+    }
+    pub(crate) fn with_size(renderer: Renderer, count: usize) -> io::Result<Self> {
+        let (notification, sender) = UnixDatagram::pair()?;
+        notification.set_nonblocking(true)?;
+        sender.set_nonblocking(true)?;
+        let sender = Arc::new(sender);
+        let mut workers = Vec::new();
+        for _ in 0..count {
+            workers.push((WorkerRenderer::spawn(renderer, sender.clone())?, false));
+        }
+        Ok(Self {
+            workers,
+            notification,
+        })
+    }
+}
+impl MathRenderer for RenderPool {
+    fn submit(&mut self, request: Request) -> bool {
+        for (worker, busy) in &mut self.workers {
+            if !*busy {
+                if worker.submit(request) {
+                    *busy = true;
+                    return true;
+                }
+                return false;
+            }
+        }
+        false
+    }
+    fn poll(&mut self) -> Option<Response> {
+        for (worker, busy) in &mut self.workers {
+            if let Some(response) = worker.poll() {
+                *busy = false;
+                return Some(response);
+            }
+        }
+        None
+    }
+    fn stop(&mut self) {
+        for (worker, busy) in &mut self.workers {
+            worker.stop();
+            *busy = false;
+        }
+    }
+    fn capacity(&self) -> usize {
+        self.workers.len()
+    }
+    fn completion_fd(&self) -> Option<RawFd> {
+        Some(self.notification.as_raw_fd())
+    }
+    fn clear_notification(&self) {
+        let mut byte = [0; 64];
+        loop {
+            match self.notification.recv(&mut byte) {
+                Ok(_) => {}
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                Err(_) => break,
+            }
+        }
     }
 }

@@ -4,7 +4,7 @@ use crate::{
     engine::Engine,
     frame::{self, FrameGate},
     graphics::{GraphicsBackend, KittyGraphics},
-    renderer::WorkerRenderer,
+    renderer::RenderPool,
     terminal::{self, Capabilities, KittyProbe, TerminalProbe},
 };
 use std::{
@@ -222,7 +222,7 @@ pub fn run(options: config::Options, doctor: bool) -> Result<i32, Box<dyn std::e
             w.ws_row,
             w.ws_col,
             metrics,
-            Box::new(WorkerRenderer::spawn(renderer)?),
+            Box::new(RenderPool::spawn(renderer)?),
             backend,
         );
         e.renderer = renderer.name().into();
@@ -276,9 +276,23 @@ pub fn run(options: config::Options, doctor: bool) -> Result<i32, Box<dyn std::e
                 events: libc::POLLIN,
                 revents: 0,
             },
+            libc::pollfd {
+                // While a child frame is incomplete, defer completion handling
+                // until the frame closes or its existing timeout expires.
+                fd: if gate.has_pending() {
+                    -1
+                } else {
+                    engine
+                        .as_ref()
+                        .and_then(Engine::completion_fd)
+                        .unwrap_or(-1)
+                },
+                events: libc::POLLIN,
+                revents: 0,
+            },
         ];
         unsafe {
-            libc::poll(fds.as_mut_ptr(), 2, 4);
+            libc::poll(fds.as_mut_ptr(), fds.len() as _, 4);
         }
         if fds[0].revents & libc::POLLIN != 0 {
             let n = unsafe { libc::read(0, buf.as_mut_ptr().cast(), buf.len()) };
