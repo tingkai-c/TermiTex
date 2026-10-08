@@ -151,6 +151,8 @@ pub fn run(options: config::Options, doctor: bool) -> Result<i32, Box<dyn std::e
                 cell_width: width,
                 cell_height: height,
                 measured_cell: false,
+                foreground: None,
+                background: None,
             },
             Vec::new(),
         )
@@ -222,8 +224,14 @@ pub fn run(options: config::Options, doctor: bool) -> Result<i32, Box<dyn std::e
         );
         e.renderer = renderer.name().into();
         e.compatibility = options.layout == config::Layout::Compatibility;
-        e.fg = std::env::var("TERMITEX_FG").unwrap_or(e.fg);
-        e.bg = std::env::var("TERMITEX_BG").unwrap_or(e.bg);
+        e.fg = std::env::var("TERMITEX_FG")
+            .ok()
+            .or(capabilities.foreground)
+            .unwrap_or(e.fg);
+        e.bg = std::env::var("TERMITEX_BG")
+            .ok()
+            .or(capabilities.background)
+            .unwrap_or(e.bg);
         Some(e)
     } else {
         None

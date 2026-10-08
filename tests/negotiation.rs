@@ -98,7 +98,9 @@ fn run(args: &[&str], replies: &[u8]) -> (Vec<u8>, ExitStatus) {
 #[test]
 fn doctor_reports_probed_capabilities_without_starting_child() {
     for (sync, expected) in [(2, true), (0, false)] {
-        let reply = format!("\x1b_Gi=1799999999;OK\x1b\\\x1b[6;22;11t\x1b[?2026;{sync}$y");
+        let reply = format!(
+            "\x1b]10;rgb:bbbb/bbbb/bbbb\x07\x1b]11;rgb:0000/0000/0000\x07\x1b_Gi=1799999999;OK\x1b\\\x1b[6;22;11t\x1b[?2026;{sync}$y"
+        );
         let (output, status) = run(&["doctor"], reply.as_bytes());
         assert!(status.success());
         let text = String::from_utf8_lossy(&output);
@@ -106,6 +108,8 @@ fn doctor_reports_probed_capabilities_without_starting_child() {
         let report: serde_json::Value = serde_json::from_str(&text[start..]).unwrap();
         assert_eq!(report["capabilities"]["kitty_graphics"], true);
         assert_eq!(report["capabilities"]["cell_width"], 11);
+        assert_eq!(report["capabilities"]["foreground"], "#bbbbbb");
+        assert_eq!(report["capabilities"]["background"], "#000000");
         assert_eq!(report["capabilities"]["cell_height"], 22);
         assert_eq!(report["capabilities"]["synchronized_updates"], expected);
         assert!(!text.contains("a=p,"));

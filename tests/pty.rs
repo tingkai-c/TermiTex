@@ -116,7 +116,7 @@ fn exercise(renderer: &str, compatibility: bool) {
             }
             if !probe && contains(&output, b"\x1b[16t") {
                 master
-                    .write_all(b"\x1b[6;34;16t\x1b[?2026;2$y\x1b_Gi=1799999999;OK\x1b\\")
+                    .write_all(b"\x1b]10;rgb:ffff/ffff/ffff\x07\x1b]11;rgb:2828/2c2c/3434\x07\x1b[6;34;16t\x1b[?2026;2$y\x1b_Gi=1799999999;OK\x1b\\")
                     .unwrap();
                 probe = true;
             }

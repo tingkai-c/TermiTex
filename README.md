@@ -121,7 +121,7 @@ layout = "compact" # "compact" or "compatibility"
 | :--- | :--- | :--- |
 | Renderer | `ratex` | `--renderer mathjax` or `TERMITEX_RENDERER=mathjax` |
 | Layout | `compact` | `--layout compatibility` or `TERMITEX_LAYOUT=compatibility` |
-| Foreground / background | `#ffffff` / `#282c34` | `TERMITEX_FG` / `TERMITEX_BG` |
+| Foreground / background | Detected terminal theme | `TERMITEX_FG` / `TERMITEX_BG` |
 | Statistics file | Disabled | `TERMITEX_STATS=/tmp/termitex-stats.json` |
 
 Precedence: **CLI > environment > config > default**. Options after `--`, or after the child command starts, belong to that program. See [config.example.toml](config.example.toml).

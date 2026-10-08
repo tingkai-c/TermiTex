@@ -8,6 +8,8 @@ pub struct Capabilities {
     pub cell_width: u16,
     pub cell_height: u16,
     pub measured_cell: bool,
+    pub foreground: Option<String>,
+    pub background: Option<String>,
 }
 
 pub trait TerminalProbe {
@@ -24,7 +26,10 @@ pub struct KittyProbe {
 }
 impl TerminalProbe for KittyProbe {
     fn queries(&self) -> String {
-        format!("\x1b[16t\x1b[?2026$p{}", crate::graphics::query())
+        format!(
+            "\x1b]10;?\x07\x1b]11;?\x07\x1b[16t\x1b[?2026$p{}",
+            crate::graphics::query()
+        )
     }
     fn receive(&mut self, bytes: &[u8]) {
         self.replies.push(bytes);
@@ -40,6 +45,8 @@ impl TerminalProbe for KittyProbe {
             cell_width: w.max(1),
             cell_height: h.max(1),
             measured_cell: self.replies.cell.is_some(),
+            foreground: self.replies.foreground.clone(),
+            background: self.replies.background.clone(),
         }
     }
     fn take_input(&mut self) -> Vec<u8> {
@@ -53,6 +60,8 @@ pub struct Replies {
     pub kitty: Option<bool>,
     pub synchronized: Option<bool>,
     pub pending: Vec<u8>,
+    pub foreground: Option<String>,
+    pub background: Option<String>,
 }
 impl Replies {
     pub fn push(&mut self, bytes: &[u8]) {
@@ -62,6 +71,11 @@ impl Replies {
             let tail = &self.pending[i..];
             let end = if tail.starts_with(b"\x1b_G") {
                 tail.windows(2).position(|v| v == b"\x1b\\").map(|n| n + 2)
+            } else if tail.starts_with(b"\x1b]") {
+                tail.iter()
+                    .position(|b| *b == 7)
+                    .map(|n| n + 1)
+                    .or_else(|| tail.windows(2).position(|v| v == b"\x1b\\").map(|n| n + 2))
             } else if tail.starts_with(b"\x1b[") {
                 tail.iter()
                     .enumerate()
@@ -87,6 +101,26 @@ impl Replies {
         let Ok(s) = std::str::from_utf8(bytes) else {
             return false;
         };
+        if let Some(body) = s
+            .strip_prefix("\x1b]")
+            .and_then(|s| s.strip_suffix('\x07').or_else(|| s.strip_suffix("\x1b\\")))
+        {
+            if let Some((code, value)) = body.split_once(';') {
+                if let Some(color) = parse_color(value) {
+                    match code {
+                        "10" => {
+                            self.foreground = Some(color);
+                            return true;
+                        }
+                        "11" => {
+                            self.background = Some(color);
+                            return true;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
         if let Some(body) = s
             .strip_prefix("\x1b_G")
             .and_then(|s| s.strip_suffix("\x1b\\"))
@@ -120,8 +154,33 @@ impl Replies {
         false
     }
     pub fn complete(&self) -> bool {
-        self.cell.is_some() && self.kitty.is_some() && self.synchronized.is_some()
+        self.cell.is_some()
+            && self.kitty.is_some()
+            && self.synchronized.is_some()
+            && self.foreground.is_some()
+            && self.background.is_some()
     }
+}
+fn parse_color(value: &str) -> Option<String> {
+    if let Some(hex) = value.strip_prefix('#') {
+        if hex.len() == 6 && hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Some(format!("#{hex}").to_lowercase());
+        }
+    }
+    let channels: Vec<_> = value.strip_prefix("rgb:")?.split('/').collect();
+    if channels.len() != 3 {
+        return None;
+    }
+    let mut color = String::from("#");
+    for channel in channels {
+        if channel.is_empty() || channel.len() > 4 {
+            return None;
+        }
+        let n = u32::from_str_radix(channel, 16).ok()?;
+        let max = (1u32 << (channel.len() * 4)) - 1;
+        color += &format!("{:02x}", (n * 255 + max / 2) / max);
+    }
+    Some(color)
 }
 pub fn name() -> String {
     for (key, name) in [
@@ -142,14 +201,17 @@ mod tests {
     use super::*;
     #[test]
     fn fragmented_reordered_replies_preserve_input() {
-        let stream =
-            format!("typed\x1b[?2026;2$y\x1b_Gi={PROBE_ID};OK\x1b\\\x1b[6;34;16t\x1b[A後\n");
+        let stream = format!(
+            "typed\x1b]10;rgb:ffff/ffff/ffff\x07\x1b]11;rgb:2828/2c2c/3434\x1b\\\x1b[?2026;2$y\x1b_Gi={PROBE_ID};OK\x1b\\\x1b[6;34;16t\x1b[A後\n"
+        );
         for split in 0..=stream.len() {
             let mut r = Replies::default();
             r.push(&stream.as_bytes()[..split]);
             r.push(&stream.as_bytes()[split..]);
             assert!(r.complete());
             assert_eq!(r.cell, Some((16, 34)));
+            assert_eq!(r.foreground.as_deref(), Some("#ffffff"));
+            assert_eq!(r.background.as_deref(), Some("#282c34"));
             assert_eq!(r.kitty, Some(true));
             assert_eq!(r.synchronized, Some(true));
             assert_eq!(r.pending, "typed\x1b[A後\n".as_bytes());

@@ -7,17 +7,17 @@ termitex doctor
 termitex -- codex -c tui.rendering.math=false
 ```
 
-`doctor` reports detected graphics transport, synchronized updates, pixel cell dimensions, and terminal identity. It does not launch Codex or a math worker. An affirmative graphics reply confirms transport availability, not complete protocol conformance or smooth scrolling.
+`doctor` reports detected graphics transport, synchronized updates, pixel cell dimensions, theme colors, and terminal identity. It does not launch Codex or a math worker. An affirmative graphics reply confirms transport availability, not complete protocol conformance or smooth scrolling.
 
 | Target | Setup | Verification |
 | :--- | :--- | :--- |
 | Ghostty · macOS/Linux | Automatic capability probing | Existing macOS visual baseline; shared layout regression tests |
-| Kitty · macOS/Linux | Automatic capability probing | Real Linux protocol smoke test in CI; visual checklist below |
-| WezTerm · macOS/Linux | Set `config.enable_kitty_graphics = true` in `wezterm.lua` | Shared transport implemented; emulator-specific visual validation pending |
+| Kitty · macOS/Linux | Automatic capability probing | Real Linux protocol and screenshot checks in CI; visual checklist below |
+| WezTerm · macOS/Linux | Set `config.enable_kitty_graphics = true` in `wezterm.lua` | Real Linux protocol and screenshot checks with Kitty graphics enabled |
 | iTerm2 · macOS | Use a version with Kitty graphics support and check `doctor` | Shared transport implemented; minimum version and visual validation pending |
-| Konsole · Linux | Check `doctor` for the installed version | Real Linux protocol smoke test in CI; visual checklist below |
+| Konsole · Linux | Check `doctor` for the installed version | Real Linux protocol and screenshot checks in CI; visual checklist below |
 
-The [latest CI run](https://github.com/tingkai-c/TermiTex/actions/workflows/ci.yml) records tested Linux terminal versions and probe transcripts as `terminal-probe-reports`. Test/build artifacts contain native binaries and license notices for all four OS/architecture combinations. They are development snapshots; the Homebrew tap remains pinned to the published release.
+The [latest CI run](https://github.com/tingkai-c/TermiTex/actions/workflows/ci.yml) records tested Linux terminal versions, probe transcripts, and screenshots before/after scrolling and resizing as `terminal-probe-reports`. Test/build artifacts contain native binaries and license notices for all four OS/architecture combinations. They are development snapshots; the Homebrew tap remains pinned to the published release.
 
 ## Controls
 
@@ -35,6 +35,12 @@ CLI graphics selection overrides the config file. Terminal identities are not us
 Cell size is queried at startup. If no reply arrives, TermiTex uses PTY pixel dimensions, or finally 16 × 34 px. Resize events use updated PTY dimensions when available. Font-size changes on terminals that do not update PTY pixel dimensions currently require restarting TermiTex. Probe timeout is 500 ms; replies that arrive after negotiation can still reach the child, so use a direct local terminal when collecting baseline reports.
 
 Use a direct terminal session for initial testing. tmux, screen, SSH, and terminal multiplexing introduce separate transport and geometry behavior and are not included in the initial compatibility claim.
+
+## Screenshot artifacts
+
+CI launches the real Kitty, WezTerm, and Konsole GUI programs in isolated Xvfb displays. Each runs the same Rust fixture through TermiTex in compact and compatibility modes. The `terminal-probe-reports` artifact contains `initial.png`, `scrolled.png`, `resized.png`, and a protocol transcript for each combination. Download it from a successful run to inspect actual terminal pixels.
+
+The fixture waits for the controller to size the window before painting, and redraws on SIGWINCH. These images validate placement and steady-state redraw behavior; they do not measure animation smoothness or GPU frame timing. Theme colors are probed, with `TERMITEX_FG` / `TERMITEX_BG` available as explicit overrides.
 
 ## Visual checklist
 
