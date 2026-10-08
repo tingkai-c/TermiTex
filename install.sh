@@ -45,7 +45,9 @@ main() {
     while [ "$#" -gt 0 ]; do
         case "$1" in
             --version|--bin-dir|--integrate|--shell)
-                [ "$#" -ge 2 ] && [ -n "$2" ] || die "$1 requires a value."
+                if [ "$#" -lt 2 ] || [ -z "$2" ]; then
+                    die "$1 requires a value."
+                fi
                 case "$1" in
                     --version) requested=${2#v} ;;
                     --bin-dir) bin_dir=$2; explicit_dir=true ;;
@@ -92,7 +94,9 @@ main() {
         [ -z "$existing" ] || die "Found an existing installation at $existing. Update it with its original method, or use --bin-dir for a separate installation."
     fi
     if $setup; then
-        $managed && [ -x "$exe" ] || die '--setup requires an existing installer-managed installation.'
+        if ! $managed || [ ! -x "$exe" ]; then
+            die '--setup requires an existing installer-managed installation.'
+        fi
         $no_shell || setup_shell
         return
     fi
@@ -141,7 +145,9 @@ main() {
     # a running installation. The release archive is trusted after verification.
     tar -xzf "$tmp_dir/$asset" -C "$tmp_dir" termitex/termitex termitex/LICENSE termitex/licenses
     candidate=$tmp_dir/termitex/termitex
-    [ -f "$candidate" ] && [ ! -L "$candidate" ] || die 'Release is missing its binary.'
+    if [ ! -f "$candidate" ] || [ -L "$candidate" ]; then
+        die 'Release is missing its binary.'
+    fi
     chmod 755 "$candidate"
     actual=$("$candidate" --version 2>"$tmp_dir/compatibility-error") || {
         cat "$tmp_dir/compatibility-error" >&2
