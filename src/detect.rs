@@ -71,8 +71,20 @@ pub fn detect(s: &vt100::Screen, fg: &str, bg: &str) -> Vec<Formula> {
             r += 1;
             continue;
         }
-        if trim == "\\[" || trim == "$$" {
-            let close = if trim == "\\[" { "\\]" } else { "$$" };
+        // Codex may put its response marker on the opening delimiter's row.
+        // Only accept a marker-only prefix, never arbitrary prose or code.
+        let display_open = ["• ", "● "]
+            .iter()
+            .find_map(|prefix| trim.strip_prefix(prefix))
+            .map(str::trim_start)
+            .unwrap_or(trim);
+        if display_open == "\\[" || display_open == "$$" {
+            let close = if display_open == "\\[" { "\\]" } else { "$$" };
+            let display_col = if display_open == trim {
+                0
+            } else {
+                map[text.find(display_open).unwrap()]
+            };
             let mut body = String::new();
             let mut stop = r + 1;
             while stop < end && stop - r <= 32 {
@@ -90,9 +102,9 @@ pub fn detect(s: &vt100::Screen, fg: &str, bg: &str) -> Vec<Formula> {
                     sources: Vec::new(),
                     latex: body.trim().into(),
                     row: r,
-                    col: 0,
+                    col: display_col,
                     rows: stop - r + 1,
-                    cols,
+                    cols: cols - display_col,
                     display: true,
                     fg: fg.into(),
                     bg: bg.into(),
@@ -257,6 +269,28 @@ fn wrapped(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn response_marker_before_display_block() {
+        let latex = r"c=(\mu_0\varepsilon_0)^{-1/2}\approx3.00\times10^8\,\mathrm{m/s}";
+        for marker in ["•", "●"] {
+            for (open, close) in [(r"\[", r"\]"), ("$$", "$$")] {
+                let mut p = vt100::Parser::new(10, 100, 0);
+                p.process(
+                    format!("{marker} {open}\r\n  {latex}\r\n  {close}\r\n› input").as_bytes(),
+                );
+                let f = detect(p.screen(), "#fff", "#000");
+                assert_eq!(f.len(), 1);
+                assert_eq!(f[0].latex, latex);
+                assert!(f[0].display);
+                assert_eq!((f[0].row, f[0].col, f[0].rows, f[0].cols), (0, 2, 3, 98));
+            }
+        }
+        for prefix in ["• prose ", "› ", "`", "```\r\n• "] {
+            let mut p = vt100::Parser::new(10, 100, 0);
+            p.process(format!("{prefix}\\[\r\n  {latex}\r\n  \\]").as_bytes());
+            assert!(detect(p.screen(), "#fff", "#000").is_empty());
+        }
+    }
     #[test]
     fn wrapped_inline_explicit_rows_and_following_formula() {
         let mut p = vt100::Parser::new(8, 70, 0);
