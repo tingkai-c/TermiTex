@@ -80,7 +80,7 @@ One graphics backend targets **Ghostty, Kitty, WezTerm, iTerm2, and Konsole**, w
 termitex doctor
 ```
 
-[Terminal setup & verification status](docs/terminals.md) · [Architecture](docs/architecture.md). These additions are on `main`; Homebrew currently installs v0.1.0.
+[Terminal setup & verification status](docs/terminals.md) · [Architecture](docs/architecture.md). Available in v0.2.0.
 
 ## Performance
 
