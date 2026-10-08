@@ -15,7 +15,7 @@ Rust owns the PTY, screen model, formula detection, layout, cache, and Kitty ima
 
 ## Limits and settings
 
-Developed on macOS with Ghostty; Kitty graphics support is required. Other terminals and applications need broader validation. The wrapper currently does not propagate the child program's exit code, so its exit status must not be used to determine whether the child succeeded.
+Terminal graphics are auto-detected through a shared Kitty graphics backend. See [terminal setup and validation status](terminals.md). The wrapper propagates the child program's exit code (or 128 + signal number).
 
 Compatibility mode preserves source cells and centers overlays. Wrapped inline formulas remain readable LaTeX in this mode to avoid covering neighboring prose. Input-area and code detection remain heuristic in both layouts.
 

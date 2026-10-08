@@ -72,6 +72,16 @@ For another interactive program, opt into compatibility mode:
 termitex --layout compatibility -- your-program
 ```
 
+## Terminals
+
+One graphics backend targets **Ghostty, Kitty, WezTerm, iTerm2, and Konsole**, with automatic capability detection and readable source text when graphics are unavailable.
+
+```sh
+termitex doctor
+```
+
+[Terminal setup & verification status](docs/terminals.md) · [Architecture](docs/architecture.md). These additions are on `main`; Homebrew currently installs v0.1.0.
+
 ## Performance
 
 **TermiTex vs TFormula on the same headless terminal workload.** Each trial renders 12 equations, then repeats them.
@@ -139,7 +149,7 @@ Choose RaTeX for native rendering or MathJax for its appearance and extensions. 
 
 ## Documentation
 
-[Rendering & compatibility](docs/reference.md) · [Benchmarks](benchmarks/competitors/README.md) · [Example configuration](config.example.toml)
+[Terminal support](docs/terminals.md) · [Architecture](docs/architecture.md) · [Rendering & compatibility](docs/reference.md) · [Benchmarks](benchmarks/competitors/README.md) · [Example configuration](config.example.toml)
 
 ## Contributing
 

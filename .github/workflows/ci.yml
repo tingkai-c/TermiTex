@@ -44,7 +44,7 @@ jobs:
           path: termitex-${{ matrix.platform }}.tar.gz
       - name: Install Linux terminals for real protocol smoke tests
         if: matrix.os == 'ubuntu-24.04'
-        run: sudo apt-get update && sudo apt-get install -y kitty konsole xvfb xauth dbus-x11
+        run: sudo apt-get update && sudo apt-get install -y kitty konsole xvfb xauth dbus-x11 imagemagick xdotool
       - name: Probe Kitty and Konsole inside Xvfb
         if: matrix.os == 'ubuntu-24.04'
         shell: bash
@@ -58,6 +58,18 @@ jobs:
           timeout 30s xvfb-run -a dbus-run-session -- konsole --separate -e /usr/bin/script -q -e -c "$PWD/target/release/termitex doctor" "$PWD/terminal-reports/konsole.txt"
           grep -q '"kitty_graphics": true' terminal-reports/kitty.txt
           grep -q '"kitty_graphics": true' terminal-reports/konsole.txt
+      - name: Capture real terminal rendering, scroll and resize
+        if: always() && matrix.os == 'ubuntu-24.04'
+        shell: bash
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+        run: |
+          cargo build --locked --example terminal_fixture
+          for terminal in kitty konsole; do
+            for layout in compact compatibility; do
+              timeout 60s xvfb-run -a -s '-screen 0 1280x960x24' dbus-run-session -- scripts/capture-terminal.sh "$terminal" "$layout"
+            done
+          done
       - uses: actions/upload-artifact@v4
         if: always() && matrix.os == 'ubuntu-24.04'
         with:

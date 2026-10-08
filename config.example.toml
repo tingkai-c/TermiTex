@@ -4,3 +4,6 @@ renderer = "ratex" # "ratex" or "mathjax"
 
 # Keep compact for Codex; compatibility preserves source cells and centers overlays.
 layout = "compact" # "compact" or "compatibility"
+
+# Probe graphics support; keep source text when unavailable.
+graphics = "auto" # "auto", "kitty" (force), or "off"
