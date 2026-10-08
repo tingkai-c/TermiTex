@@ -1,0 +1,65 @@
+name: Test and build
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux-x86_64
+          - os: ubuntu-24.04-arm
+            platform: linux-aarch64
+          - os: macos-15
+            platform: macos-aarch64
+          - os: macos-15-intel
+            platform: macos-x86_64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      - run: cargo test --locked
+      - run: cargo build --release --locked
+      - name: Package binary and licenses
+        shell: bash
+        run: |
+          mkdir -p dist/termitex
+          cp target/release/termitex LICENSE dist/termitex/
+          cp -R licenses dist/termitex/
+          tar -czf termitex-${{ matrix.platform }}.tar.gz -C dist termitex
+      - uses: actions/upload-artifact@v4
+        with:
+          name: termitex-${{ matrix.platform }}
+          path: termitex-${{ matrix.platform }}.tar.gz
+      - name: Install Linux terminals for real protocol smoke tests
+        if: matrix.os == 'ubuntu-24.04'
+        run: sudo apt-get update && sudo apt-get install -y kitty konsole xvfb xauth dbus-x11
+      - name: Probe Kitty and Konsole inside Xvfb
+        if: matrix.os == 'ubuntu-24.04'
+        shell: bash
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+        run: |
+          mkdir -p terminal-reports
+          kitty --version > terminal-reports/versions.txt
+          konsole --version >> terminal-reports/versions.txt
+          timeout 30s xvfb-run -a kitty --config NONE /usr/bin/script -q -e -c "$PWD/target/release/termitex doctor" "$PWD/terminal-reports/kitty.txt"
+          timeout 30s xvfb-run -a dbus-run-session -- konsole --separate -e /usr/bin/script -q -e -c "$PWD/target/release/termitex doctor" "$PWD/terminal-reports/konsole.txt"
+          grep -q '"kitty_graphics": true' terminal-reports/kitty.txt
+          grep -q '"kitty_graphics": true' terminal-reports/konsole.txt
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.os == 'ubuntu-24.04'
+        with:
+          name: terminal-probe-reports
+          path: terminal-reports/

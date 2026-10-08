@@ -1,32 +1,17 @@
 use crate::detect::{Formula, detect};
+#[cfg(test)]
+use crate::renderer::Response;
+use crate::{
+    graphics::{GraphicsBackend, Rectangle},
+    renderer::{MathRenderer, Request},
+};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::{
     collections::{HashMap, HashSet},
     hash::{Hash, Hasher},
-    sync::mpsc::{Receiver, SyncSender},
     time::Instant,
 };
-const Z: u32 = 20_270_001;
-#[derive(Clone, Serialize, Deserialize)]
-pub struct Request {
-    pub key: String,
-    pub formula: Formula,
-    #[serde(default)]
-    pub compatibility: bool,
-    pub cell_width: u16,
-    pub cell_height: u16,
-}
-#[derive(Serialize, Deserialize)]
-pub struct Response {
-    pub key: String,
-    #[serde(default)]
-    pub png: String,
-    #[serde(default)]
-    pub error: Option<String>,
-    #[serde(default)]
-    pub columns: u16,
-}
 struct Image {
     columns: u16,
     data: String,
@@ -59,8 +44,8 @@ pub struct Engine {
     pins: HashMap<(u16, u16, u16, u16), Pin>,
     failed: HashSet<String>,
     inflight: Option<(String, Instant)>,
-    tx: SyncSender<Request>,
-    rx: Receiver<Response>,
+    renderer_backend: Box<dyn MathRenderer>,
+    graphics: Box<dyn GraphicsBackend>,
     next_id: u32,
     next_pin: u32,
     tick: u64,
@@ -72,12 +57,12 @@ pub struct Engine {
     pub compatibility: bool,
 }
 impl Engine {
-    pub fn new(
+    pub fn with_backends(
         rows: u16,
         cols: u16,
         cell: (u16, u16),
-        tx: SyncSender<Request>,
-        rx: Receiver<Response>,
+        renderer_backend: Box<dyn MathRenderer>,
+        graphics: Box<dyn GraphicsBackend>,
     ) -> Self {
         Self {
             parser: vt100::Parser::new(rows, cols, 0),
@@ -88,8 +73,8 @@ impl Engine {
             pins: HashMap::new(),
             failed: HashSet::new(),
             inflight: None,
-            tx,
-            rx,
+            renderer_backend,
+            graphics,
             next_id: 1_800_000_000,
             next_pin: 1,
             tick: 0,
@@ -100,6 +85,27 @@ impl Engine {
             renderer: "ratex".into(),
             compatibility: false,
         }
+    }
+    pub fn stop_renderer(&mut self) {
+        self.enabled = false;
+        self.renderer_backend.stop();
+        self.inflight = None;
+    }
+    #[cfg(test)]
+    fn new(
+        rows: u16,
+        cols: u16,
+        cell: (u16, u16),
+        tx: std::sync::mpsc::SyncSender<Request>,
+        rx: std::sync::mpsc::Receiver<Response>,
+    ) -> Self {
+        Self::with_backends(
+            rows,
+            cols,
+            cell,
+            Box::new(crate::renderer::ChannelRenderer { tx, rx }),
+            Box::new(crate::graphics::KittyGraphics),
+        )
     }
     pub fn resize(&mut self, rows: u16, cols: u16) {
         self.parser.screen_mut().set_size(rows, cols);
@@ -121,7 +127,7 @@ impl Engine {
             }
         } else if moved {
             for p in self.pins.values() {
-                out += &delete_pin(p);
+                out += &self.graphics.remove(p.id, p.placement);
             }
             self.pins.clear();
         }
@@ -129,7 +135,7 @@ impl Engine {
     }
     pub fn poll(&mut self) -> String {
         let mut changed = false;
-        while let Ok(r) = self.rx.try_recv() {
+        while let Some(r) = self.renderer_backend.poll() {
             self.inflight = None;
             if r.error.is_some() || r.png.len() > 16_777_216 || STANDARD.decode(&r.png).is_err() {
                 self.failed.insert(r.key);
@@ -242,7 +248,7 @@ impl Engine {
             if let Some(im) = self.cache.get_mut(&key) {
                 im.used = self.tick;
                 if !im.uploaded {
-                    out += &upload(im.id, &im.data);
+                    out += &self.graphics.upload(im.id, &im.data);
                     im.uploaded = true;
                     self.stats.uploads += 1;
                 }
@@ -257,15 +263,15 @@ impl Engine {
                     placement: self.next_pin,
                 };
                 desired.insert(pos, p.clone());
-                out += &format!(
-                    "\x1b[{};{}H\x1b_Ga=p,i={},p={},q=2,c={},r={},C=1,z={}\x1b\\",
-                    f.row + 1,
-                    col + 1,
+                out += &self.graphics.place(
                     p.id,
                     p.placement,
-                    width,
-                    f.rows,
-                    Z
+                    Rectangle {
+                        row: f.row,
+                        col,
+                        cols: width,
+                        rows: f.rows,
+                    },
                 );
                 self.stats.placements += 1;
             } else if request.is_none() && !self.failed.contains(&key) {
@@ -281,14 +287,14 @@ impl Engine {
         // Remove obsolete pins, not shared uploaded rasters.
         for (pos, pin) in &self.pins {
             if desired.get(pos) != Some(pin) {
-                out += &delete_pin(pin);
+                out += &self.graphics.remove(pin.id, pin.placement);
             }
         }
         self.pins = desired;
         if self.inflight.is_none() {
             if let Some(r) = request {
                 let key = r.key.clone();
-                if self.tx.try_send(r).is_ok() {
+                if self.renderer_backend.submit(r) {
                     self.inflight = Some((key, Instant::now()));
                     self.stats.requests += 1;
                 }
@@ -305,7 +311,7 @@ impl Engine {
             let Some(k) = victim else { break };
             if let Some(i) = self.cache.remove(&k) {
                 bytes -= i.data.len();
-                out += &format!("\x1b_Ga=d,d=I,i={},q=2\x1b\\", i.id);
+                out += &self.graphics.release(i.id);
             }
         }
         if !out.is_empty() {
@@ -323,12 +329,9 @@ impl Engine {
         self.stats.max_reconcile_us = self.stats.max_reconcile_us.max(t.elapsed().as_micros());
         out
     }
-    pub fn cleanup() -> String {
-        format!("\x1b_Ga=d,d=Z,z={Z},q=2\x1b\\")
+    pub fn cleanup(&self) -> String {
+        self.graphics.cleanup()
     }
-}
-fn delete_pin(p: &Pin) -> String {
-    format!("\x1b_Ga=d,d=i,i={},p={},q=2\x1b\\", p.id, p.placement)
 }
 fn key(f: &Formula, cell: (u16, u16), renderer: &str, compatibility: bool) -> String {
     let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -337,21 +340,6 @@ fn key(f: &Formula, cell: (u16, u16), renderer: &str, compatibility: bool) -> St
     f.hash(&mut h);
     cell.hash(&mut h);
     format!("{:016x}", h.finish())
-}
-fn upload(id: u32, png: &str) -> String {
-    let mut s = String::new();
-    let chunks: Vec<_> = png.as_bytes().chunks(4096).collect();
-    for (i, c) in chunks.iter().enumerate() {
-        let more = usize::from(i + 1 < chunks.len());
-        if i == 0 {
-            s += &format!("\x1b_Ga=t,f=100,i={id},q=2,m={more};");
-        } else {
-            s += &format!("\x1b_Gm={more};");
-        }
-        s += std::str::from_utf8(c).unwrap();
-        s += "\x1b\\";
-    }
-    s
 }
 #[cfg(test)]
 mod tests {

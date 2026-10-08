@@ -43,13 +43,36 @@ impl FromStr for Layout {
         }
     }
 }
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Graphics {
+    #[default]
+    Auto,
+    Kitty,
+    Off,
+}
+impl FromStr for Graphics {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, String> {
+        match s {
+            "auto" => Ok(Self::Auto),
+            "kitty" => Ok(Self::Kitty),
+            "off" => Ok(Self::Off),
+            _ => Err(format!(
+                "unknown graphics mode {s:?}; choose auto, kitty or off"
+            )),
+        }
+    }
+}
 #[derive(Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct FileConfig {
+    graphics: Option<Graphics>,
     renderer: Option<Renderer>,
     layout: Option<Layout>,
 }
 pub struct Options {
+    pub graphics: Graphics,
     pub renderer: Renderer,
     pub layout: Layout,
     pub command: Vec<String>,
@@ -63,6 +86,7 @@ pub fn resolve(
     let conf: FileConfig =
         toml::from_str(file).map_err(|e| format!("invalid TermiTex config: {e}"))?;
     // RaTeX is the default after the representative native/PTY compatibility gate.
+    let mut graphics = conf.graphics.unwrap_or_default();
     let mut renderer = env
         .map(str::parse)
         .transpose()?
@@ -78,7 +102,16 @@ pub fn resolve(
             args.remove(0);
             break;
         }
-        if arg == "--layout" {
+        if arg == "--graphics" {
+            args.remove(0);
+            if args.is_empty() {
+                return Err("--graphics requires auto, kitty or off".into());
+            }
+            graphics = args.remove(0).parse()?;
+        } else if let Some(name) = arg.strip_prefix("--graphics=") {
+            graphics = name.parse()?;
+            args.remove(0);
+        } else if arg == "--layout" {
             args.remove(0);
             if args.is_empty() {
                 return Err("--layout requires compact or compatibility".into());
@@ -108,6 +141,7 @@ pub fn resolve(
         ];
     }
     Ok(Options {
+        graphics,
         renderer,
         layout,
         command: args,

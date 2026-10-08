@@ -1,5 +1,5 @@
 //! Isolated RaTeX worker: the PTY process remains responsive if rendering fails.
-use crate::engine::{Request, Response};
+use crate::renderer::{Request, Response};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use ratex_layout::{LayoutOptions, layout, to_display_list};
 use ratex_parser::parser::parse;

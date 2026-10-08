@@ -85,6 +85,7 @@ fn exercise(renderer: &str, compatibility: bool) {
         .env("TERMITEX_PTY_FIXTURE", "1")
         .env_remove("TERMITEX_ACTIVE")
         .env_remove("TERMITEX_STATS")
+        .env("XDG_CONFIG_HOME", "/nonexistent/termitex-tests")
         .stdin(Stdio::from(slave.try_clone().unwrap()))
         .stdout(Stdio::from(slave.try_clone().unwrap()))
         .stderr(Stdio::from(slave));
@@ -114,7 +115,9 @@ fn exercise(renderer: &str, compatibility: bool) {
                 Err(e) => panic!("PTY read: {e}"),
             }
             if !probe && contains(&output, b"\x1b[16t") {
-                master.write_all(b"\x1b[6;34;16t").unwrap();
+                master
+                    .write_all(b"\x1b[6;34;16t\x1b[?2026;2$y\x1b_Gi=1799999999;OK\x1b\\")
+                    .unwrap();
                 probe = true;
             }
             let expected: &[u8] = if compatibility {
