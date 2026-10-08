@@ -1,14 +1,21 @@
 #!/usr/bin/env bash
 # Run inside an isolated Xvfb display. Captures actual terminal pixels, not PNGs
 # produced by the math worker. Requires kitty/konsole, ImageMagick and xdotool.
-set -euo pipefail
+set -euxo pipefail
 terminal=${1:?terminal}
 layout=${2:?layout}
 root=$(pwd)
 out="$root/terminal-reports/$terminal-$layout"
 mkdir -p "$out"
 control=$(mktemp -d)
-trap 'touch "$control/exit"; if [[ -n ${terminal_pid:-} ]]; then kill "$terminal_pid" 2>/dev/null || true; fi; rm -rf "$control"' EXIT
+cleanup() {
+  status=$?
+  if [[ $status -ne 0 ]]; then import -window root "$out/failure.png" || true; fi
+  touch "$control/exit"
+  if [[ -n ${terminal_pid:-} ]]; then kill "$terminal_pid" 2>/dev/null || true; fi
+  rm -rf "$control"
+}
+trap cleanup EXIT
 command="$root/target/release/termitex --layout $layout -- $root/target/debug/examples/terminal_fixture $control"
 case "$terminal" in
   kitty)
@@ -28,7 +35,13 @@ for _ in $(seq 1 100); do
   sleep 0.1
 done
 test -f "$control/ready"
-window=$(xdotool search --onlyvisible --name 'TermiTex visual check' | head -1)
+window=
+for _ in $(seq 1 100); do
+  window=$(xdotool search --onlyvisible --class 'kitty|konsole|org.wezfurlong.wezterm' | head -1 || true)
+  [[ -n "$window" ]] && break
+  sleep 0.1
+done
+test -n "$window"
 xdotool windowsize "$window" 1100 850
 # Wait for real placements to reach the emulator, then allow the GUI to paint.
 for _ in $(seq 1 100); do
