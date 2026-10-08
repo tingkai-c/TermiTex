@@ -45,3 +45,9 @@ Unit tests cover split/reordered replies, unrelated input preservation, layout, 
 Run `cargo run --release --example render_pipeline_bench`. This exercises actual native worker processes and completion descriptors with 24 uncached display equations after a warmup, seven fresh-pool trials per configuration. It compares simulated 4 ms polling against event-driven completion, then one versus two workers. It asserts successful unique responses and bounded completion waits; timings are observations, not CI thresholds.
 
 Local macOS arm64 medians: 120.08 ms with one worker and simulated polling, 5.24 ms with one worker and wakeups, 2.81 ms with two workers and wakeups. This isolates scheduling and rendering; it excludes PTY parsing, terminal image upload, emulator display, and startup. It does not measure scrolling frame rate, CPU savings, or memory savings. The polling baseline simulates an idle terminal loop; real incoming terminal events can wake that loop sooner.
+
+## Startup benchmark
+
+Run `cargo run --release --example startup_bench -- target/release/termitex` after building the release binary. This measures process launch until a trivial child's `READY` marker reaches a headless PTY, using nine launches per case and synthetic immediate terminal replies. It does not measure Codex readiness or a real terminal's reply latency.
+
+Local macOS arm64 medians: direct child 1.83 ms; graphics disabled 5.53 ms; graphics enabled with all replies 23.78 ms; graphics supported but color replies omitted 529.63 ms. The all-replies range was 6.21–36.19 ms, so startup has substantial variation. Missing replies exhaust the 500 ms negotiation deadline before the child is launched. Worker startup also precedes forwarding the child's first output. The benchmark does not change these startup policies.
