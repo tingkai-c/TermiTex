@@ -41,6 +41,52 @@ fn line(s: &vt100::Screen, r: u16) -> (String, Vec<u16>) {
     map.push(s.size().1);
     (text, map)
 }
+fn escaped(text: &str, offset: usize) -> bool {
+    text.as_bytes()[..offset]
+        .iter()
+        .rev()
+        .take_while(|&&b| b == b'\\')
+        .count()
+        % 2
+        == 1
+}
+fn dollar_run(text: &str, offset: usize, len: usize) -> bool {
+    (offset == 0 || text.as_bytes()[offset - 1] != b'$')
+        && text.as_bytes().get(offset + len) != Some(&b'$')
+}
+// Pandoc-style dollar boundaries: no space after an opener or before a
+// closer, and no digit immediately after a closer. Escapes apply to both.
+// https://pandoc.org/MANUAL.html#math
+fn dollar_open(text: &str, offset: usize) -> bool {
+    dollar_run(text, offset, 1)
+        && text[offset + 1..]
+            .chars()
+            .next()
+            .is_some_and(|c| !c.is_whitespace())
+}
+fn closing(text: &str, start: usize, close: &str) -> Option<usize> {
+    text[start..].match_indices(close).find_map(|(n, _)| {
+        let offset = start + n;
+        if escaped(text, offset)
+            || (close.starts_with('$') && !dollar_run(text, offset, close.len()))
+        {
+            return None;
+        }
+        if close == "$"
+            && (text[..offset]
+                .chars()
+                .next_back()
+                .is_none_or(char::is_whitespace)
+                || text[offset + 1..]
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_digit()))
+        {
+            return None;
+        }
+        Some(offset)
+    })
+}
 #[cfg(test)]
 pub fn detect(s: &vt100::Screen, fg: &str, bg: &str) -> Vec<Formula> {
     use crate::app::InputPolicy;
@@ -52,16 +98,21 @@ pub fn detect_output(s: &vt100::Screen, fg: &str, bg: &str, end: u16) -> Vec<For
     let mut result = Vec::new();
     let mut consumed = std::collections::HashMap::<u16, usize>::new();
     let mut r = 0;
-    let mut fenced = false;
+    let mut fenced: Option<(u8, usize)> = None;
     while r < end {
         let (text, map) = &lines[r as usize];
         let trim = text.trim();
-        if trim.starts_with("```") || trim.starts_with("~~~") {
-            fenced = !fenced;
+        let marker = trim.as_bytes().first().copied().unwrap_or(b' ');
+        let run = trim.bytes().take_while(|&b| b == marker).count();
+        if let Some((fence_marker, fence_len)) = fenced {
+            if marker == fence_marker && run >= fence_len && trim[run..].trim().is_empty() {
+                fenced = None;
+            }
             r += 1;
             continue;
         }
-        if fenced {
+        if matches!(marker, b'`' | b'~') && run >= 3 {
+            fenced = Some((marker, run));
             r += 1;
             continue;
         }
@@ -83,7 +134,7 @@ pub fn detect_output(s: &vt100::Screen, fg: &str, bg: &str, end: u16) -> Vec<For
             let mut stop = r + 1;
             while stop < end && stop - r <= 32 {
                 let t = lines[stop as usize].0.trim();
-                if t == close {
+                if t == close || (display_open == "$$" && t.is_empty()) {
                     break;
                 }
                 body.push_str(t);
@@ -108,34 +159,46 @@ pub fn detect_output(s: &vt100::Screen, fg: &str, bg: &str, end: u16) -> Vec<For
             }
         }
         let mut offset = consumed.get(&r).copied().unwrap_or(0);
-        let mut code = false;
+        // Include a soft-wrapped successor for delimiter lookahead (notably
+        // a digit after a closing dollar at the right edge of the screen).
+        let scan_text = if s.row_wrapped(r) && r + 1 < end {
+            format!("{text}{}", lines[r as usize + 1].0)
+        } else {
+            text.clone()
+        };
+        let mut code = None;
         while offset < text.len() {
             let rest = &text[offset..];
             let ch = rest.chars().next().unwrap();
-            if ch == '`' {
-                code = !code;
-                offset += 1;
+            if ch == '`' && (code.is_some() || !escaped(text, offset)) {
+                let run = rest.bytes().take_while(|&b| b == b'`').count();
+                if code == Some(run) {
+                    code = None;
+                } else if code.is_none() {
+                    code = Some(run);
+                }
+                offset += run;
                 continue;
             }
-            let pair = if !code && rest.starts_with("\\(") {
+            let eligible = code.is_none() && !escaped(text, offset);
+            let pair = if eligible && rest.starts_with("\\(") {
                 Some(("\\(", "\\)", false))
-            } else if !code && rest.starts_with("\\[") {
+            } else if eligible && rest.starts_with("\\[") {
                 Some(("\\[", "\\]", true))
-            } else if !code && rest.starts_with("$$") {
+            } else if eligible && rest.starts_with("$$") && dollar_run(&scan_text, offset, 2) {
                 Some(("$$", "$$", true))
-            } else if !code && rest.starts_with('$') {
+            } else if eligible && rest.starts_with('$') && dollar_open(&scan_text, offset) {
                 Some(("$", "$", false))
             } else {
                 None
             };
             if let Some((open, close, display)) = pair {
-                if let Some(n) = text[offset + open.len()..].find(close) {
-                    let finish = offset + open.len() + n + close.len();
-                    let body = &text[offset + open.len()..offset + open.len() + n];
-                    if !body.trim().is_empty()
-                        && (open != "$" || body.contains(['\\', '^', '_', '=', '+']))
-                        && body.len() < 20000
-                    {
+                if let Some(n) = closing(&scan_text, offset + open.len(), close)
+                    .filter(|&n| n + close.len() <= text.len())
+                {
+                    let finish = n + close.len();
+                    let body = &text[offset + open.len()..n];
+                    if !body.trim().is_empty() && body.len() < 20000 {
                         let c = map[offset];
                         let cell = s.cell(r, c).unwrap();
                         result.push(Formula {
@@ -185,7 +248,11 @@ fn wrapped(
     bg: &str,
 ) -> Option<(Formula, Vec<(u16, usize)>)> {
     let first = &lines[row as usize];
-    let first_end = first.0.trim_end().len();
+    let first_end = if s.row_wrapped(row) {
+        first.0.len()
+    } else {
+        first.0.trim_end().len()
+    };
     let mut body = first.0[start + open.len()..first_end].to_string();
     let mut sources = vec![SourceSpan {
         row,
@@ -194,6 +261,12 @@ fn wrapped(
     }];
     let mut ends = Vec::new();
     for next in row + 1..end.min(row.saturating_add(9)) {
+        // A dollar in shell/code output is ambiguous. Only join its rows when
+        // the terminal confirms a wrap; explicit bracket math retains support
+        // for coding CLIs that wrap using cursor positioning.
+        if open == "$" && !s.row_wrapped(next - 1) {
+            return None;
+        }
         let (text, map) = &lines[next as usize];
         let trim = text.trim();
         if trim.is_empty()
@@ -208,9 +281,27 @@ fn wrapped(
         } else {
             text.len() - text.trim_start().len()
         };
-        let last = text.trim_end().len();
+        let last = if s.row_wrapped(next) {
+            text.len()
+        } else {
+            text.trim_end().len()
+        };
         let part = &text[begin..last];
-        let closing = part.find(close);
+        if !s.row_wrapped(next - 1) {
+            body.push(' ');
+        }
+        let previous_len = body.len();
+        body.push_str(part);
+        // Scan the joined text so escape parity and the character before a
+        // closing dollar remain correct at a terminal row boundary.
+        let scan_body = if s.row_wrapped(next) && next + 1 < end {
+            format!("{body}{}", lines[next as usize + 1].0)
+        } else {
+            body.clone()
+        };
+        let closing = closing(&scan_body, previous_len, close)
+            .filter(|&n| n + close.len() <= body.len())
+            .map(|n| n - previous_len);
         if open != close
             && part
                 .find(open)
@@ -218,12 +309,9 @@ fn wrapped(
         {
             return None;
         }
-        if !s.row_wrapped(next - 1) {
-            body.push(' ');
-        }
         if let Some(n) = closing {
-            body.push_str(&part[..n]);
-            if body.len() > 20000 || (open == "$" && !body.contains(['\\', '^', '_', '=', '+'])) {
+            body.truncate(previous_len + n);
+            if body.len() > 20000 || body.trim().is_empty() {
                 return None;
             }
             let finish = begin + n + close.len();
@@ -250,7 +338,6 @@ fn wrapped(
             };
             return Some((formula, ends));
         }
-        body.push_str(part);
         sources.push(SourceSpan {
             row: next,
             col: map[begin],
@@ -263,6 +350,85 @@ fn wrapped(
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn formulas(input: &str) -> Vec<Formula> {
+        let mut p = vt100::Parser::new(20, 100, 0);
+        p.process(input.as_bytes());
+        detect(p.screen(), "#fff", "#000")
+    }
+    #[test]
+    fn pandoc_dollar_boundaries() {
+        for input in ["$x$", "$2$", "$(x+y)^2$", "// $x$", "149 + // $x$"] {
+            assert_eq!(formulas(input).len(), 1, "{input}");
+        }
+        for input in [
+            "$ x$",
+            "$x $",
+            "$ x $",
+            "$x$2",
+            "$5 + $10",
+            "$20,000 and $30,000",
+            "$\u{2003}x$",
+            "$x\u{2003}$",
+            "$$x^2$",
+            "$x^2$$",
+            "$$$x^2$$$",
+        ] {
+            assert!(formulas(input).is_empty(), "{input}");
+        }
+        let f = formulas("中文 $x$ and $2$, then $$ x^2 $$");
+        assert_eq!(
+            f.iter().map(|f| f.latex.as_str()).collect::<Vec<_>>(),
+            ["x", "2", " x^2 "]
+        );
+        assert_eq!((f[0].col, f[0].cols), (5, 3));
+        assert!(f[2].display);
+    }
+    #[test]
+    fn escaped_delimiters() {
+        for input in [r"\$x^2\$", r"\\(x^2\\)", r"\$$x^2\$$"] {
+            assert!(formulas(input).is_empty(), "{input}");
+        }
+        assert_eq!(formulas(r"$x+\$5+y$")[0].latex, r"x+\$5+y");
+        assert_eq!(formulas(r"\\$x$")[0].latex, "x");
+        assert_eq!(formulas(r"\(x+\\)+y\)")[0].latex, r"x+\\)+y");
+    }
+    #[test]
+    fn javascript_diff_and_unrelated_rows_stay_text() {
+        let input = "149 - $('math-codex').hidden = key !== 'codex';\r\n150 - $('math-claude').hidden = key !== 'claude';\r\n149 + $('math-codex').toggleAttribute('hidden', key !== 'codex');";
+        assert!(formulas(input).is_empty());
+        assert!(formulas("$x^2\r\nlog: completed\r\nnext $").is_empty());
+        assert!(formulas("$$\r\nx^2\r\n\r\n$$").is_empty());
+    }
+    #[test]
+    fn dollar_softwrap_preserves_escapes_and_boundaries() {
+        for (input, expected) in [
+            ("123456789 $x+y+z$", Some("x+y+z")),
+            ("123456789 $x+\\$5+y$", Some(r"x+\$5+y")),
+            ("123456789 $x  $", None),
+            ("123456789 $xx$2", None),
+            ("123456789 $xxxxxxxxxxxxxxx$2", None),
+            ("123456789012$x$", Some("x")),
+        ] {
+            let mut p = vt100::Parser::new(8, 13, 0);
+            p.process(input.as_bytes());
+            assert!(p.screen().row_wrapped(0));
+            let f = detect(p.screen(), "#fff", "#000");
+            assert_eq!(f.first().map(|f| f.latex.as_str()), expected, "{input}");
+        }
+    }
+    #[test]
+    fn matching_code_delimiters() {
+        for input in [
+            "``$x^2$``",
+            "``a ` $x$``",
+            "```js\r\n~~~\r\n$x$\r\n```",
+            "````js\r\n```\r\n$x$\r\n````",
+        ] {
+            assert!(formulas(input).is_empty(), "{input}");
+        }
+        assert_eq!(formulas("``$x$`` and $y$")[0].latex, "y");
+        assert_eq!(formulas("```js\r\n$x$\r\n```\r\n$y$")[0].latex, "y");
+    }
     #[test]
     fn response_marker_before_display_block() {
         let latex = r"c=(\mu_0\varepsilon_0)^{-1/2}\approx3.00\times10^8\,\mathrm{m/s}";
