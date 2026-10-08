@@ -16,7 +16,9 @@ cleanup() {
   rm -rf "$control"
 }
 trap cleanup EXIT
-command="$root/target/release/termitex --layout $layout -- $root/target/debug/examples/terminal_fixture $control"
+# Exercise the Codex input policy with the deterministic fixture executable.
+ln -s "$root/target/debug/examples/terminal_fixture" "$control/codex"
+command="$root/target/release/termitex --layout $layout -- $control/codex $control"
 case "$terminal" in
   kitty)
     kitty --config NONE -o initial_window_width=1100 -o initial_window_height=850 -o font_size=16 -o background='#282c34' /usr/bin/script -q -e -f -c "$command" "$out/transcript.txt" &

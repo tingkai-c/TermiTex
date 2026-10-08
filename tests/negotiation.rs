@@ -18,6 +18,14 @@ fn run_with_resize(
     replies: &[u8],
     resize_during_probe: bool,
 ) -> (Vec<u8>, ExitStatus) {
+    run_peer(args, replies, resize_during_probe, None)
+}
+fn run_peer(
+    args: &[&str],
+    replies: &[u8],
+    resize_during_probe: bool,
+    started: Option<&std::path::Path>,
+) -> (Vec<u8>, ExitStatus) {
     let (mut master, mut slave) = (-1, -1);
     let mut size = libc::winsize {
         ws_row: 30,
@@ -77,6 +85,13 @@ fn run_with_resize(
                 Err(e) => panic!("{e}"),
             }
             if !replied && output.windows(5).any(|w| w == b"\x1b[16t") {
+                if let Some(path) = started {
+                    let deadline = Instant::now() + Duration::from_millis(300);
+                    while !path.exists() && Instant::now() < deadline {
+                        std::thread::sleep(Duration::from_millis(1));
+                    }
+                    assert!(path.exists(), "child must start before terminal replies");
+                }
                 if resize_during_probe {
                     let size = libc::winsize {
                         ws_row: 42,
@@ -189,12 +204,33 @@ fn explicit_off_does_not_probe_or_modify_output() {
 }
 
 #[test]
-fn startup_resize_reaches_child_before_first_frame() {
+fn startup_resize_reaches_child_before_input_is_released() {
     let (output, status) = run_with_resize(
-        &["--", "/bin/sh", "-c", "stty size"],
-        b"\x1b[6;34;16t\x1b_Gi=1799999999;ENOTSUP\x1b\\\x1b[?2026;0$y",
+        &["--", "/bin/sh", "-c", "read -r line; stty size"],
+        b"go\n\x1b[6;34;16t\x1b_Gi=1799999999;ENOTSUP\x1b\\\x1b[?2026;0$y",
         true,
     );
     assert!(status.success());
     assert!(String::from_utf8_lossy(&output).contains("42 90"));
+}
+
+#[test]
+fn app_starts_before_negotiation_completes() {
+    let path = std::env::temp_dir().join(format!("termitex-started-{}", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    let (output, status) = run_peer(
+        &[
+            "/bin/sh",
+            "-c",
+            "touch \"$1\"; printf READY",
+            "sh",
+            path.to_str().unwrap(),
+        ],
+        b"\x1b[6;34;16t\x1b_Gi=1799999999;ENOTSUP\x1b\\\x1b[?2026;0$y",
+        false,
+        Some(&path),
+    );
+    std::fs::remove_file(path).unwrap();
+    assert!(status.success());
+    assert!(String::from_utf8_lossy(&output).contains("READY"));
 }

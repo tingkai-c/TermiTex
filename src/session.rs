@@ -148,24 +148,8 @@ pub fn run(options: config::Options, doctor: bool) -> Result<i32, Box<dyn std::e
     }
     signal_hook::flag::register(libc::SIGWINCH, resize.clone())?;
     let mut w = window();
-    let (capabilities, pending) = if options.graphics == config::Graphics::Off && !doctor {
-        let (width, height) = cell(&w);
-        (
-            Capabilities {
-                kitty_graphics: false,
-                synchronized_updates: false,
-                cell_width: width,
-                cell_height: height,
-                measured_cell: false,
-                foreground: None,
-                background: None,
-            },
-            Vec::new(),
-        )
-    } else {
-        probe(&mut KittyProbe::default(), cell(&w))?
-    };
     if doctor {
+        let (capabilities, _) = probe(&mut KittyProbe::default(), cell(&w))?;
         drop(tty);
         println!(
             "{}",
@@ -179,20 +163,6 @@ pub fn run(options: config::Options, doctor: bool) -> Result<i32, Box<dyn std::e
         );
         return Ok(0);
     }
-    let graphics = match options.graphics {
-        config::Graphics::Auto => capabilities.kitty_graphics,
-        config::Graphics::Kitty => true,
-        config::Graphics::Off => false,
-    };
-    let synchronized = graphics && capabilities.synchronized_updates;
-    let backend: Option<Box<dyn GraphicsBackend>> =
-        graphics.then(|| Box::new(KittyGraphics) as Box<dyn GraphicsBackend>);
-    tty.cleanup = backend.as_ref().map(|backend| backend.cleanup());
-    tty.synchronized = synchronized;
-    let metrics = (capabilities.cell_width, capabilities.cell_height);
-    // Negotiation can overlap initial window sizing. Refresh before fork, and
-    // retain SIGWINCH received during negotiation for the first event-loop pass.
-    w = window();
     let mut master = -1;
     let pid = unsafe { libc::forkpty(&mut master, std::ptr::null_mut(), &mut original, &mut w) };
     if pid < 0 {
@@ -213,6 +183,40 @@ pub fn run(options: config::Options, doctor: bool) -> Result<i32, Box<dyn std::e
         return Err(io::Error::last_os_error().into());
     }
     let mut pty = unsafe { std::fs::File::from_raw_fd(master) };
+    let (capabilities, pending) = if options.graphics == config::Graphics::Off && !doctor {
+        let (width, height) = cell(&w);
+        (
+            Capabilities {
+                kitty_graphics: false,
+                synchronized_updates: false,
+                cell_width: width,
+                cell_height: height,
+                measured_cell: false,
+                foreground: None,
+                background: None,
+            },
+            Vec::new(),
+        )
+    } else {
+        probe(&mut KittyProbe::default(), cell(&w))?
+    };
+    let graphics = match options.graphics {
+        config::Graphics::Auto => capabilities.kitty_graphics,
+        config::Graphics::Kitty => true,
+        config::Graphics::Off => false,
+    };
+    let synchronized = graphics && capabilities.synchronized_updates;
+    let backend: Option<Box<dyn GraphicsBackend>> =
+        graphics.then(|| Box::new(KittyGraphics) as Box<dyn GraphicsBackend>);
+    tty.cleanup = backend.as_ref().map(|backend| backend.cleanup());
+    tty.synchronized = synchronized;
+    let metrics = (capabilities.cell_width, capabilities.cell_height);
+    // The child has been loading concurrently with negotiation. The PTY's
+    // bounded kernel buffer holds its initial output until graphics are ready.
+    w = window();
+    unsafe {
+        libc::ioctl(master, libc::TIOCSWINSZ, &w);
+    }
     // PTY input writes are small; only reads are attempted after readiness polling.
     if !pending.is_empty() {
         pty.write_all(&pending)?;
@@ -225,6 +229,7 @@ pub fn run(options: config::Options, doctor: bool) -> Result<i32, Box<dyn std::e
             Box::new(RenderPool::spawn(renderer)?),
             backend,
         );
+        e.app = crate::app::App::for_command(&args[0]);
         e.renderer = renderer.name().into();
         e.compatibility = options.layout == config::Layout::Compatibility;
         e.fg = std::env::var("TERMITEX_FG")

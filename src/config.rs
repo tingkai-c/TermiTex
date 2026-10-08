@@ -97,8 +97,10 @@ pub fn resolve(
         .transpose()?
         .or(conf.layout)
         .unwrap_or_default();
+    let mut literal = false;
     while let Some(arg) = args.first() {
         if arg == "--" {
+            literal = true;
             args.remove(0);
             break;
         }
@@ -129,6 +131,10 @@ pub fn resolve(
         } else if let Some(name) = arg.strip_prefix("--renderer=") {
             renderer = name.parse()?;
             args.remove(0);
+        } else if arg.starts_with('-') {
+            return Err(format!(
+                "unknown TermiTex option {arg:?}; put app arguments after the command"
+            ));
         } else {
             break;
         }
@@ -139,6 +145,12 @@ pub fn resolve(
             "-c".into(),
             "tui.rendering.math=false".into(),
         ];
+    } else if !literal
+        && std::path::Path::new(&args[0])
+            .file_name()
+            .is_some_and(|n| n == "codex")
+    {
+        args.splice(1..1, ["-c".into(), "tui.rendering.math=false".into()]);
     }
     Ok(Options {
         graphics,
@@ -169,6 +181,31 @@ pub fn load(args: Vec<String>) -> Result<Options, Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn intuitive_commands_and_literal_passthrough() {
+        let resolve_args = |args: &[&str]| {
+            resolve(args.iter().map(|s| s.to_string()).collect(), None, None, "")
+                .unwrap()
+                .command
+        };
+        assert_eq!(
+            resolve_args(&["claude", "--model", "sonnet", "--help"]),
+            ["claude", "--model", "sonnet", "--help"]
+        );
+        assert_eq!(
+            resolve_args(&["codex", "resume"]),
+            ["codex", "-c", "tui.rendering.math=false", "resume"]
+        );
+        assert_eq!(
+            resolve_args(&["--", "codex", "resume"]),
+            ["codex", "resume"]
+        );
+        assert_eq!(
+            resolve_args(&["python", "-c", "print(1)"]),
+            ["python", "-c", "print(1)"]
+        );
+        assert!(resolve(vec!["--typo".into()], None, None, "").is_err());
+    }
     #[test]
     fn graphics_config_override_and_child_boundary() {
         assert_eq!(

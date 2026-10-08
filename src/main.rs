@@ -1,3 +1,4 @@
+mod app;
 mod config;
 mod detect;
 mod engine;
@@ -30,8 +31,12 @@ fn run() -> Result<i32, Box<dyn std::error::Error>> {
     }
     if args.first().is_some_and(|s| s == "--help" || s == "-h") {
         println!("TermiTex: asynchronous math rendering for Kitty-graphics terminals
+termitex [options] <app> [app arguments...]
+Examples: termitex codex | termitex claude | termitex python
 termitex [--renderer ratex|mathjax] [--layout compact|compatibility] [--graphics auto|kitty|off] [--] command [args...]
 termitex doctor                 Report terminal capabilities without launching an application.
+Options belong before the app; arguments after it pass through unchanged.
+Direct codex launches disable its built-in math rendering. Use -- for literal command passthrough.
 Default: native RaTeX, compact layout, auto-detected graphics; launches stock Codex.
 Unsupported terminals keep original text. --graphics kitty overrides detection; off disables graphics.
 Config: ~/.config/termitex/config.toml (or XDG_CONFIG_HOME).

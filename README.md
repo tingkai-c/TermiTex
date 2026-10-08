@@ -60,17 +60,17 @@ cargo build --release --locked
 
 </details>
 
-The default command launches `codex -c tui.rendering.math=false`. To pass your own Codex options:
+Wrap an app directly (available on `main`):
 
 ```sh
-termitex -- codex -c tui.rendering.math=false --model MODEL
+termitex codex
+termitex claude
+termitex --layout compatibility python
 ```
 
-For another interactive program, opt into compatibility mode:
+Arguments after the app name pass through to that app. `termitex codex` disables Codex’s built-in math rendering automatically. Running `termitex` alone still launches Codex. Use `termitex -- command ...` for literal argument passthrough.
 
-```sh
-termitex --layout compatibility -- your-program
-```
+Codex and Claude Code have dedicated input-area rules to keep drafts as text. Other commands use generic math detection; choose compatibility mode for applications that manage their own screen layout.
 
 ## Terminals
 

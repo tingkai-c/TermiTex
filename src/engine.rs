@@ -1,4 +1,5 @@
-use crate::detect::{Formula, detect};
+use crate::app::{App, InputPolicy};
+use crate::detect::{Formula, detect_output};
 #[cfg(test)]
 use crate::renderer::Response;
 use crate::{
@@ -55,6 +56,7 @@ pub struct Engine {
     pub enabled: bool,
     pub renderer: String,
     pub compatibility: bool,
+    pub app: App,
 }
 impl Engine {
     pub fn with_backends(
@@ -84,6 +86,7 @@ impl Engine {
             enabled: true,
             renderer: "ratex".into(),
             compatibility: false,
+            app: App::Codex,
         }
     }
     pub fn stop_renderer(&mut self) {
@@ -185,12 +188,17 @@ impl Engine {
         let t = Instant::now();
         self.tick += 1;
         self.stats.scans += 1;
-        let formulas: Vec<_> = detect(self.parser.screen(), &self.fg, &self.bg)
-            .into_iter()
-            // A wrapped inline formula has disjoint source spans. A rectangular
-            // overlay could hide neighboring prose; keep those as source here.
-            .filter(|f| !self.compatibility || f.sources.is_empty())
-            .collect();
+        let formulas: Vec<_> = detect_output(
+            self.parser.screen(),
+            &self.fg,
+            &self.bg,
+            self.app.output_end(self.parser.screen()),
+        )
+        .into_iter()
+        // A wrapped inline formula has disjoint source spans. A rectangular
+        // overlay could hide neighboring prose; keep those as source here.
+        .filter(|f| !self.compatibility || f.sources.is_empty())
+        .collect();
         let mut compact: HashMap<u16, Vec<crate::layout::Span>> = HashMap::new();
         for f in &formulas {
             if self.compatibility || f.display || f.rows != 1 {

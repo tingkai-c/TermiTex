@@ -41,20 +41,14 @@ fn line(s: &vt100::Screen, r: u16) -> (String, Vec<u16>) {
     map.push(s.size().1);
     (text, map)
 }
+#[cfg(test)]
 pub fn detect(s: &vt100::Screen, fg: &str, bg: &str) -> Vec<Formula> {
+    use crate::app::InputPolicy;
+    detect_output(s, fg, bg, crate::app::App::Codex.output_end(s))
+}
+pub fn detect_output(s: &vt100::Screen, fg: &str, bg: &str, end: u16) -> Vec<Formula> {
     let (rows, cols) = s.size();
     let lines: Vec<_> = (0..rows).map(|r| line(s, r)).collect();
-    let mut end = rows;
-    for r in (0..rows).rev() {
-        let t = lines[r as usize].0.trim_start();
-        if t.starts_with("› ") || t.starts_with("❯ ") {
-            end = r;
-            break;
-        }
-        if t.starts_with("• ") || t.starts_with("● ") {
-            break;
-        }
-    }
     let mut result = Vec::new();
     let mut consumed = std::collections::HashMap::<u16, usize>::new();
     let mut r = 0;

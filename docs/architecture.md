@@ -34,7 +34,7 @@ Synchronized updates are used only when the terminal reports support. Child-gene
 
 Keep terminal-specific workarounds inside the transport/probe layer and add them only for a reproduced, versioned failure. There are no speculative brand-specific workarounds. A future Sixel backend must first account for its different image lifetime and redraw semantics; the current interface is not a promise that every protocol maps identically.
 
-Application heuristics (such as the Codex input-area exclusion) remain in detection. Compact and compatibility modes remain layout choices independent of terminal brand. The existing layout algorithm and renderer geometry are unchanged by this refactor.
+`InputPolicy` separates app-specific editable-region detection from LaTeX parsing. The executable basename selects Codex, Claude Code, or generic policy. Claude supports the `❯` prompt and a bordered `>` prompt, excluding continuation rows and footer content. Generic apps do not inherit those prompt rules. Compact and compatibility modes remain layout choices independent of terminal brand. The existing layout algorithm and renderer geometry are unchanged by this refactor.
 
 ## Validation
 
@@ -50,4 +50,4 @@ Local macOS arm64 medians: 120.08 ms with one worker and simulated polling, 5.24
 
 Run `cargo run --release --example startup_bench -- target/release/termitex` after building the release binary. This measures process launch until a trivial child's `READY` marker reaches a headless PTY, using nine launches per case and synthetic immediate terminal replies. It does not measure Codex readiness or a real terminal's reply latency.
 
-Local macOS arm64 medians: direct child 1.83 ms; graphics disabled 5.53 ms; graphics enabled with all replies 23.78 ms; graphics supported but color replies omitted 529.63 ms. The all-replies range was 6.21–36.19 ms, so startup has substantial variation. Missing replies exhaust the 500 ms negotiation deadline before the child is launched. Worker startup also precedes forwarding the child's first output. The benchmark does not change these startup policies.
+Local macOS arm64 medians: direct child 1.83 ms; graphics disabled 5.53 ms; graphics enabled with all replies 23.78 ms; graphics supported but color replies omitted 529.63 ms. The all-replies range was 6.21–36.19 ms, so startup has substantial variation. These baseline measurements preceded startup overlap. Missing replies exhausted the 500 ms negotiation deadline before the child was launched. Worker startup also precedes forwarding the child's first output. The child now starts concurrently with negotiation, with output buffered by the PTY; first visible output still waits for negotiation.

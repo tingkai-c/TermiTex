@@ -1,6 +1,8 @@
 //! Run: cargo run --release --example render_pipeline_bench
 //! Isolated pipeline latency, not terminal frame rate or CPU time.
 #![allow(dead_code)]
+#[path = "../src/app.rs"]
+mod app;
 #[path = "../src/config.rs"]
 mod config;
 #[path = "../src/detect.rs"]
