@@ -547,11 +547,14 @@ mod tests {
         let mut e = Engine::new(30, 100, (16, 34), tx, rx);
         e.accept(b"\x1b[?1049h\\[\r\nx^2\r\n\\]", false, false);
         let req = requests.recv().unwrap();
-        let t = Instant::now();
-        for _ in 0..1000 {
+        // No response is sent until after these updates: progress must not
+        // depend on the worker. Throughput belongs in benchmarks, not a wall
+        // clock assertion that varies with shared CI runner load.
+        for _ in 0..32 {
             e.accept(b"\x1b[25;1Hstatus", false, false);
         }
-        assert!(t.elapsed().as_secs() < 2);
+        assert!(e.inflight.is_some());
+        assert!(requests.try_recv().is_err());
         assert_eq!(e.stats.requests, 1);
         e.accept(b"\x1b[2J\x1b[5;1H\\[\r\nx^2\r\n\\]", true, false);
         responses

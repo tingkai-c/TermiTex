@@ -170,6 +170,35 @@ pub fn load(args: Vec<String>) -> Result<Options, Box<dyn std::error::Error>> {
 mod tests {
     use super::*;
     #[test]
+    fn graphics_config_override_and_child_boundary() {
+        assert_eq!(
+            resolve(vec![], None, None, "").unwrap().graphics,
+            Graphics::Auto
+        );
+        assert_eq!(
+            resolve(vec![], None, None, "graphics='off'")
+                .unwrap()
+                .graphics,
+            Graphics::Off
+        );
+        let opts = resolve(
+            vec![
+                "--graphics=kitty".into(),
+                "--".into(),
+                "app".into(),
+                "--graphics=off".into(),
+            ],
+            None,
+            None,
+            "graphics='off'",
+        )
+        .unwrap();
+        assert_eq!(opts.graphics, Graphics::Kitty);
+        assert_eq!(opts.command, ["app", "--graphics=off"]);
+        assert!(resolve(vec!["--graphics".into()], None, None, "").is_err());
+        assert!(resolve(vec![], None, None, "graphics='typo'").is_err());
+    }
+    #[test]
     fn layout_precedence_and_validation() {
         assert_eq!(
             resolve(vec![], None, None, "").unwrap().layout,

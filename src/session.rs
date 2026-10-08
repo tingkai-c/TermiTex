@@ -19,7 +19,7 @@ use std::{
 };
 struct TerminalGuard {
     original: libc::termios,
-    graphics: bool,
+    cleanup: Option<String>,
     synchronized: bool,
 }
 impl Drop for TerminalGuard {
@@ -27,8 +27,8 @@ impl Drop for TerminalGuard {
         unsafe {
             libc::tcsetattr(0, libc::TCSANOW, &self.original);
         }
-        if self.graphics {
-            let _ = io::stdout().write_all(KittyGraphics.cleanup().as_bytes());
+        if let Some(cleanup) = &self.cleanup {
+            let _ = io::stdout().write_all(cleanup.as_bytes());
         }
         if self.synchronized {
             let _ = io::stdout().write_all(b"\x1b[?2026l");
@@ -138,7 +138,7 @@ pub fn run(options: config::Options, doctor: bool) -> Result<i32, Box<dyn std::e
     }
     let mut tty = TerminalGuard {
         original,
-        graphics: false,
+        cleanup: None,
         synchronized: false,
     };
     let mut w = window();
@@ -177,7 +177,9 @@ pub fn run(options: config::Options, doctor: bool) -> Result<i32, Box<dyn std::e
         config::Graphics::Off => false,
     };
     let synchronized = graphics && capabilities.synchronized_updates;
-    tty.graphics = graphics;
+    let backend: Option<Box<dyn GraphicsBackend>> =
+        graphics.then(|| Box::new(KittyGraphics) as Box<dyn GraphicsBackend>);
+    tty.cleanup = backend.as_ref().map(|backend| backend.cleanup());
     tty.synchronized = synchronized;
     let metrics = (capabilities.cell_width, capabilities.cell_height);
     let mut master = -1;
@@ -210,13 +212,13 @@ pub fn run(options: config::Options, doctor: bool) -> Result<i32, Box<dyn std::e
         signal_hook::flag::register(s, stop.clone())?;
     }
     signal_hook::flag::register(libc::SIGWINCH, resize.clone())?;
-    let mut engine = if graphics {
+    let mut engine = if let Some(backend) = backend {
         let mut e = Engine::with_backends(
             w.ws_row,
             w.ws_col,
             metrics,
             Box::new(WorkerRenderer::spawn(renderer)?),
-            Box::new(KittyGraphics),
+            backend,
         );
         e.renderer = renderer.name().into();
         e.compatibility = options.layout == config::Layout::Compatibility;

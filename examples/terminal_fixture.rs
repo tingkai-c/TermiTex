@@ -20,7 +20,7 @@ fn main() {
             "\x1b[18;3H\\(\\epsilon_0,\\mu_0\\)           Constants",
             "\x1b[21;3HWrapped: \\(\\partial/\r\n  \\partial t\\) measures change over time.",
             "\x1b[25;3H```tex\r\n  \\frac{source}{code}\r\n  ```",
-            "\x1b[29;3HAsk Codex to do anything: \\(this stays source\\)",
+            "\x1b[29;3H› Ask Codex to do anything: \\(this stays source\\)",
             "\x1b[?2026l"
         )
     );
