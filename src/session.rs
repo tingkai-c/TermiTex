@@ -141,6 +141,12 @@ pub fn run(options: config::Options, doctor: bool) -> Result<i32, Box<dyn std::e
         cleanup: None,
         synchronized: false,
     };
+    let stop = Arc::new(AtomicBool::new(false));
+    let resize = Arc::new(AtomicBool::new(false));
+    for s in [libc::SIGTERM, libc::SIGHUP] {
+        signal_hook::flag::register(s, stop.clone())?;
+    }
+    signal_hook::flag::register(libc::SIGWINCH, resize.clone())?;
     let mut w = window();
     let (capabilities, pending) = if options.graphics == config::Graphics::Off && !doctor {
         let (width, height) = cell(&w);
@@ -184,6 +190,9 @@ pub fn run(options: config::Options, doctor: bool) -> Result<i32, Box<dyn std::e
     tty.cleanup = backend.as_ref().map(|backend| backend.cleanup());
     tty.synchronized = synchronized;
     let metrics = (capabilities.cell_width, capabilities.cell_height);
+    // Negotiation can overlap initial window sizing. Refresh before fork, and
+    // retain SIGWINCH received during negotiation for the first event-loop pass.
+    w = window();
     let mut master = -1;
     let pid = unsafe { libc::forkpty(&mut master, std::ptr::null_mut(), &mut original, &mut w) };
     if pid < 0 {
@@ -208,12 +217,6 @@ pub fn run(options: config::Options, doctor: bool) -> Result<i32, Box<dyn std::e
     if !pending.is_empty() {
         pty.write_all(&pending)?;
     }
-    let stop = Arc::new(AtomicBool::new(false));
-    let resize = Arc::new(AtomicBool::new(false));
-    for s in [libc::SIGTERM, libc::SIGHUP] {
-        signal_hook::flag::register(s, stop.clone())?;
-    }
-    signal_hook::flag::register(libc::SIGWINCH, resize.clone())?;
     let mut engine = if let Some(backend) = backend {
         let mut e = Engine::with_backends(
             w.ws_row,

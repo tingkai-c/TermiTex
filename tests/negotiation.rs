@@ -11,6 +11,13 @@ use std::{
 // A headless terminal peer: replies can arrive fragmented with real keystrokes.
 // These tests exercise negotiation, not any particular emulator's renderer.
 fn run(args: &[&str], replies: &[u8]) -> (Vec<u8>, ExitStatus) {
+    run_with_resize(args, replies, false)
+}
+fn run_with_resize(
+    args: &[&str],
+    replies: &[u8],
+    resize_during_probe: bool,
+) -> (Vec<u8>, ExitStatus) {
     let (mut master, mut slave) = (-1, -1);
     let mut size = libc::winsize {
         ws_row: 30,
@@ -70,6 +77,21 @@ fn run(args: &[&str], replies: &[u8]) -> (Vec<u8>, ExitStatus) {
                 Err(e) => panic!("{e}"),
             }
             if !replied && output.windows(5).any(|w| w == b"\x1b[16t") {
+                if resize_during_probe {
+                    let size = libc::winsize {
+                        ws_row: 42,
+                        ws_col: 90,
+                        ws_xpixel: 1440,
+                        ws_ypixel: 1428,
+                    };
+                    assert_eq!(
+                        unsafe { libc::ioctl(master.as_raw_fd(), libc::TIOCSWINSZ, &size) },
+                        0
+                    );
+                    unsafe {
+                        libc::kill(child.0.id() as i32, libc::SIGWINCH);
+                    }
+                }
                 for fragment in replies.chunks(3) {
                     master.write_all(fragment).unwrap();
                 }
@@ -164,4 +186,15 @@ fn explicit_off_does_not_probe_or_modify_output() {
     );
     assert_eq!(status.code(), Some(9));
     assert_eq!(output, b"SOURCE");
+}
+
+#[test]
+fn startup_resize_reaches_child_before_first_frame() {
+    let (output, status) = run_with_resize(
+        &["--", "/bin/sh", "-c", "stty size"],
+        b"\x1b[6;34;16t\x1b_Gi=1799999999;ENOTSUP\x1b\\\x1b[?2026;0$y",
+        true,
+    );
+    assert!(status.success());
+    assert!(String::from_utf8_lossy(&output).contains("42 90"));
 }

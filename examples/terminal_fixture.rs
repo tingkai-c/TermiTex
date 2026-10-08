@@ -18,9 +18,9 @@ fn paint(scrolled: bool) {
             "\x1b[5;3HDisplay: quadratic formula",
             "\x1b[6;3H\\[\r\n  x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}\r\n\r\n  \\]",
             "\x1b[11;3HIntegral: \\(\\int_0^1 x^2\\,dx = \\frac{1}{3}\\)",
-            "\x1b[13;3HSymbol                          Meaning",
-            "\x1b[14;3H\\(\\nabla\\cdot\\)                Divergence",
-            "\x1b[15;3H\\(\\epsilon_0,\\mu_0\\)           Constants",
+            "\x1b[13;3HSymbol\x1b[13;35HMeaning",
+            "\x1b[14;3H\\(\\nabla\\cdot\\)\x1b[14;35HDivergence",
+            "\x1b[15;3H\\(\\epsilon_0,\\mu_0\\)\x1b[15;35HConstants",
             "\x1b[17;3HWrapped: \\(\\partial/\r\n  \\partial t\\) measures change over time.",
             "\x1b[20;3H```tex\r\n  \\frac{source}{code}\r\n  ```",
             "\x1b[24;3H› Ask Codex to do anything: \\(this stays source\\)"
