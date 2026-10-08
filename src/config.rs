@@ -139,13 +139,8 @@ pub fn resolve(
             break;
         }
     }
-    if args.is_empty() {
-        args = vec![
-            "codex".into(),
-            "-c".into(),
-            "tui.rendering.math=false".into(),
-        ];
-    } else if !literal
+    if !args.is_empty()
+        && !literal
         && std::path::Path::new(&args[0])
             .file_name()
             .is_some_and(|n| n == "codex")
@@ -316,7 +311,7 @@ mod tests {
     fn native_default() {
         let options = resolve(vec![], None, None, "").unwrap();
         assert_eq!(options.renderer, Renderer::Ratex);
-        assert_eq!(options.command, ["codex", "-c", "tui.rendering.math=false"]);
+        assert!(options.command.is_empty());
     }
     #[test]
     fn reject_typos() {

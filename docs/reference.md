@@ -32,6 +32,6 @@ In the default compact mode, inline compaction rewrites displayed terminal cells
 
 ## Command line and startup
 
-Use `termitex [options] <app> [app arguments...]`. Wrapper options must precede the app; later flags belong to the child. `termitex codex` adds `-c tui.rendering.math=false` before the supplied app arguments. The explicit `--` separator preserves literal child arguments, including for Codex. The no-argument default remains Codex.
+Use `termitex [options] <app> [app arguments...]`. Wrapper options must precede the app; later flags belong to the child. `termitex codex` adds `-c tui.rendering.math=false` before the supplied app arguments. The explicit `--` separator preserves literal child arguments, including for Codex. Without an app, TermiTex shows brief usage and exits successfully without launching a child or probing the terminal.
 
 The app starts before the terminal capability probe, allowing app loading to overlap its bounded 500 ms negotiation window. Initial output stays in the PTY's bounded kernel buffer; a prolific child may temporarily block until negotiation ends. Terminal replies are filtered before keyboard input reaches the child. Window size is refreshed before releasing that input; resizing interactive apps receive SIGWINCH. This overlaps startup work but does not eliminate the maximum probe delay before first visible output. `doctor` still probes without starting an app.

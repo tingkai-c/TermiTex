@@ -34,7 +34,7 @@ On macOS, with [Homebrew](https://brew.sh), Ghostty, and Codex CLI installed:
 
 ```sh
 brew install tingkai-c/tap/termitex
-termitex
+termitex codex
 ```
 
 Homebrew handles the build and dependencies through our [official tap](https://github.com/tingkai-c/homebrew-tap). No Node or npm needed.
@@ -55,7 +55,7 @@ Requires Git and a recent Rust toolchain (tested with 1.95).
 git clone https://github.com/tingkai-c/TermiTex.git
 cd TermiTex
 cargo build --release --locked
-./target/release/termitex
+./target/release/termitex codex
 ```
 
 </details>
@@ -68,7 +68,7 @@ termitex claude
 termitex --layout compatibility python
 ```
 
-Arguments after the app name pass through to that app. `termitex codex` disables Codex’s built-in math rendering automatically. Running `termitex` alone still launches Codex. Use `termitex -- command ...` for literal argument passthrough.
+Arguments after the app name pass through to that app. `termitex codex` disables Codex’s built-in math rendering automatically. Running `termitex` alone shows usage. Use `termitex -- command ...` for literal argument passthrough.
 
 Codex and Claude Code have dedicated input-area rules to keep drafts as text. Other commands use generic math detection; choose compatibility mode for applications that manage their own screen layout.
 
@@ -142,7 +142,7 @@ The Homebrew package includes the native renderer only. For MathJax, use the sou
 
 ```sh
 npm ci --ignore-scripts
-./target/release/termitex --renderer mathjax
+./target/release/termitex --renderer mathjax codex
 ```
 
 Choose RaTeX for native rendering or MathJax for its appearance and extensions. [Renderer details](docs/reference.md).

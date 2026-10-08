@@ -19,8 +19,24 @@ fn main() {
         }
     }
 }
+fn usage() {
+    println!(
+        "Usage: termitex [options] <app> [args...]
+
+Examples:
+  termitex codex
+  termitex claude
+  termitex --layout compatibility python
+
+Run termitex --help for all options."
+    );
+}
 fn run() -> Result<i32, Box<dyn std::error::Error>> {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
+    if args.is_empty() {
+        usage();
+        return Ok(0);
+    }
     if args.first().is_some_and(|s| s == "--internal-ratex-worker") {
         native::worker()?;
         return Ok(0);
@@ -37,7 +53,7 @@ termitex [--renderer ratex|mathjax] [--layout compact|compatibility] [--graphics
 termitex doctor                 Report terminal capabilities without launching an application.
 Options belong before the app; arguments after it pass through unchanged.
 Direct codex launches disable its built-in math rendering. Use -- for literal command passthrough.
-Default: native RaTeX, compact layout, auto-detected graphics; launches stock Codex.
+Default: native RaTeX, compact layout, auto-detected graphics. Without an app, shows usage.
 Unsupported terminals keep original text. --graphics kitty overrides detection; off disables graphics.
 Config: ~/.config/termitex/config.toml (or XDG_CONFIG_HOME).
 TERMITEX_RENDERER / TERMITEX_LAYOUT override config. CLI options take precedence.
@@ -51,5 +67,10 @@ WezTerm: enable_kitty_graphics = true. See docs/terminals.md for terminal testin
     if doctor {
         args.remove(0);
     }
-    session::run(config::load(args)?, doctor)
+    let options = config::load(args)?;
+    if !doctor && options.command.is_empty() {
+        usage();
+        return Ok(0);
+    }
+    session::run(options, doctor)
 }
