@@ -30,7 +30,18 @@ Read equations where you work. TermiTex turns LaTeX in CLI output into beautiful
 
 ## Quick start
 
-On macOS, with [Homebrew](https://brew.sh), Ghostty, and Codex CLI installed:
+On macOS or Linux, install the native binary:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/tingkai-c/TermiTex/main/install.sh -o /tmp/termitex-install.sh
+sh /tmp/termitex-install.sh
+```
+
+The installer verifies release checksums and installs to `~/.local/bin`. On a first install it offers optional shell setup for Codex, Claude Code, or both. Existing aliases and functions are preserved. Open a new shell after setup, then run `termitex codex` or `termitex claude` (or the chosen aliases).
+
+Rerun the installer to update. An already-current version is left alone; `--force` reinstalls it. Updates and reinstalls preserve shell configuration. No Rust or Node is required. Linux binaries need a compatible glibc system; the installer checks that the binary runs before replacing an existing installation. [Installer options, manual downloads, and removal](docs/install.md).
+
+Alternatively, on macOS with [Homebrew](https://brew.sh):
 
 ```sh
 brew install tingkai-c/tap/termitex
@@ -60,7 +71,7 @@ cargo build --release --locked
 
 </details>
 
-Wrap an app directly (available on `main`):
+Wrap an app directly:
 
 ```sh
 termitex codex
@@ -68,7 +79,7 @@ termitex claude
 termitex --layout compatibility python
 ```
 
-Arguments after the app name pass through to that app. `termitex codex` disables Codex’s built-in math rendering automatically. Running `termitex` alone shows usage. Use `termitex -- command ...` for literal argument passthrough.
+Arguments after the app name pass through to that app. `termitex codex` disables Codex's built-in math rendering automatically. `termitex claude` appends a short instruction requesting literal LaTeX with `\(...\)` and `\[...\]`, unless you supply your own append prompt. Running `termitex` alone shows usage. Use `termitex -- command ...` for literal argument passthrough.
 
 Codex and Claude Code have dedicated input-area rules to keep drafts as text. Other commands use generic math detection; choose compatibility mode for applications that manage their own screen layout.
 
@@ -158,9 +169,10 @@ Bug reports are most useful with the terminal and OS versions, backend/layout, a
 ```sh
 cargo test --locked
 cargo fmt --check
+python3 tests/installer.py
 ```
 
-The Rust tests cover detection, layout, configuration, worker recovery, and headless PTY scrolling/resizing. Native image checks exercise 31 representative renders and five invalid/unsupported inputs; compatibility checks verify centering. No Python or Pillow is needed for tests. Historical benchmark scripts still use Python.
+The Rust tests cover detection, layout, configuration, worker recovery, and headless PTY scrolling/resizing. Native image checks exercise 31 representative renders and five invalid/unsupported inputs; compatibility checks verify centering. The Rust tests need neither Python nor Pillow. Installer tests and historical benchmark scripts use Python.
 
 After installing npm dependencies, also run:
 

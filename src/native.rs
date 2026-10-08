@@ -45,7 +45,9 @@ pub fn render(req: &Request) -> Result<(Vec<u8>, u16), String> {
     let bg = color(&f.bg)?;
     let ast = parse(&f.latex).map_err(|e| e.to_string())?;
     let options = LayoutOptions::default()
-        .with_style(if f.display {
+        // Display-style fractions need multiple rows. Text style keeps the
+        // surrounding symbols readable when the source only occupies one.
+        .with_style(if f.display && f.rows > 1 {
             MathStyle::Display
         } else {
             MathStyle::Text
@@ -163,6 +165,56 @@ pub fn worker() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn one_row_fraction_keeps_surrounding_symbols_larger() {
+        let mut req = Request {
+            key: "maxwell".into(),
+            formula: crate::detect::Formula {
+                sources: Vec::new(),
+                latex: r"\nabla\times\mathbf{E}=-\frac{\partial\mathbf{B}}{\partial t}".into(),
+                row: 0,
+                col: 0,
+                rows: 1,
+                cols: 80,
+                display: true,
+                fg: "#ffffff".into(),
+                bg: "#000000".into(),
+            },
+            cell_width: 16,
+            cell_height: 34,
+            compatibility: false,
+        };
+        fn ink_width(bytes: Vec<u8>) -> u32 {
+            let mut reader = png::Decoder::new(std::io::Cursor::new(bytes))
+                .read_info()
+                .unwrap();
+            let mut pixels = vec![0; reader.output_buffer_size()];
+            let info = reader.next_frame(&mut pixels).unwrap();
+            let channels = info.color_type.samples();
+            let mut bounds = (info.width, 0);
+            for (i, pixel) in pixels[..info.buffer_size()]
+                .chunks_exact(channels)
+                .enumerate()
+            {
+                if pixel[0] > 64 {
+                    let x = i as u32 % info.width;
+                    bounds.0 = bounds.0.min(x);
+                    bounds.1 = bounds.1.max(x);
+                }
+            }
+            bounds.1 - bounds.0 + 1
+        }
+        let compact = ink_width(render(&req).unwrap().0);
+        req.formula.latex.insert_str(0, r"\displaystyle ");
+        let squeezed = ink_width(render(&req).unwrap().0);
+        assert!(compact > squeezed * 12 / 10, "{compact} vs {squeezed}");
+        req.formula.rows = 5;
+        let full = ink_width(render(&req).unwrap().0);
+        assert!(
+            full > compact,
+            "a display block has room for full-size math"
+        );
+    }
     #[test]
     fn validate_colors() {
         assert!(color("#fff").is_ok());

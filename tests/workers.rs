@@ -66,7 +66,7 @@ fn native_rendering_and_error_recovery_without_node() {
 #[test]
 #[ignore = "requires Node.js and npm ci --ignore-scripts"]
 fn mathjax_worker_png_dimensions_and_compaction() {
-    let requests: Vec<Value> = [("inline", "J", 1, 5, false), ("display", r"\displaystyle\frac{1}{2}", 3, 80, true), ("curl", r"\nabla\times", 1, 20, false)].into_iter().map(|(key, latex, rows, cols, display)| json!({"key":key,"cell_width":16,"cell_height":34,"formula":{"latex":latex,"row":0,"col":0,"rows":rows,"cols":cols,"display":display,"fg":"#ffffff","bg":"#282c34"}})).collect();
+    let requests: Vec<Value> = [("inline", "J", 1, 5, false), ("one-row-display", r"\nabla\times E=-\frac{\partial B}{\partial t}", 1, 80, true), ("display", r"\displaystyle\frac{1}{2}", 3, 80, true), ("curl", r"\nabla\times", 1, 20, false)].into_iter().map(|(key, latex, rows, cols, display)| json!({"key":key,"cell_width":16,"cell_height":34,"formula":{"latex":latex,"row":0,"col":0,"rows":rows,"cols":cols,"display":display,"fg":"#ffffff","bg":"#282c34"}})).collect();
     let mut command = Command::new("node");
     command.arg(concat!(env!("CARGO_MANIFEST_DIR"), "/worker/render.mjs"));
     let responses = support::responses(command, &requests);

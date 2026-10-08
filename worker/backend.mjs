@@ -20,7 +20,7 @@ export async function render(req) {
  if(!Number.isInteger(width)||!Number.isInteger(height)||width<1||height<1||width>4096||height>4096)throw Error('formula canvas exceeds raster limit');
  const caps={cell:{width:req.cell_width,height:req.cell_height}};
  const containerWidth=f.display&&f.rows>1?Math.max(1,Math.round(Math.max(1,width-req.cell_width*2)*8/(req.cell_height*0.45))):100000;
- const svg=await typeset(f.latex,f.display,containerWidth,cache);
+ const svg=await typeset(f.latex,f.display&&f.rows>1,containerWidth,cache);
  const dimensions=readSvgDimensions(svg);
  const geometry=calculateFormulaGeometry({aspectRatio:dimensions.aspectRatio,naturalHeightEx:dimensions.heightEx,depthEx:dimensions.depthEx,
   columns:f.cols,rows:f.rows,cell:caps.cell,scale:1,display:f.display,leftAlign:!f.display&&!req.compatibility});

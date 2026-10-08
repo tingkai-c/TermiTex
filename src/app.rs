@@ -32,6 +32,10 @@ fn border(text: &str) -> bool {
     let text = text.trim();
     text.chars().count() >= 8 && text.chars().all(|c| matches!(c, '─' | '━' | '-'))
 }
+fn prompt(text: &str, marker: char) -> bool {
+    text.strip_prefix(marker)
+        .is_some_and(|rest| rest.chars().next().is_none_or(char::is_whitespace))
+}
 impl InputPolicy for App {
     fn output_end(&self, screen: &vt100::Screen) -> u16 {
         let rows = screen.size().0;
@@ -48,7 +52,7 @@ impl InputPolicy for App {
                 if top + 1 < bottom {
                     let first = row(screen, top + 1);
                     let text = first.trim_start();
-                    if text.starts_with("❯ ") || text.starts_with("> ") {
+                    if prompt(text, '❯') || prompt(text, '>') {
                         return top + 1;
                     }
                 }
@@ -58,10 +62,10 @@ impl InputPolicy for App {
             let text = row(screen, r);
             let t = text.trim_start();
             let prompt = match self {
-                Self::Codex => t.starts_with("› ") || t.starts_with("❯ "),
+                Self::Codex => prompt(t, '›') || prompt(t, '❯'),
                 Self::Claude => {
-                    t.starts_with("❯ ")
-                        || (t.starts_with("> ") && r > 0 && {
+                    prompt(t, '❯')
+                        || (prompt(t, '>') && r > 0 && {
                             let previous = row(screen, r - 1);
                             border(&previous)
                         })
@@ -85,6 +89,20 @@ impl InputPolicy for App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn claude_scrolled_history_with_nbsp_composer_keeps_output_visible() {
+        for whitespace in [" ", "\u{a0}", "\u{2003}", ""] {
+            let mut p = vt100::Parser::new(12, 80, 0);
+            p.process(format!("❯ Explain Maxwell's equations\r\n\\[\r\n\\nabla\\cdot B=0\r\n\\]\r\nCurrent \\(J\\)\x1b[8;1H─────────────────\r\n❯{whitespace}\r\n─────────────────\r\nauto mode on").as_bytes());
+            let end = App::Claude.output_end(p.screen());
+            assert_eq!(end, 8);
+            assert_eq!(
+                crate::detect::detect_output(p.screen(), "#fff", "#000", end).len(),
+                2
+            );
+        }
+        assert!(!prompt("❯not a prompt", '❯'));
+    }
     #[test]
     fn claude_draft_is_not_detected_as_math() {
         let mut p = vt100::Parser::new(12, 80, 0);

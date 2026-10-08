@@ -41,6 +41,13 @@ fn line(s: &vt100::Screen, r: u16) -> (String, Vec<u16>) {
     map.push(s.size().1);
     (text, map)
 }
+fn table_border(c: char) -> bool {
+    matches!(c, '│' | '┃' | '║')
+}
+fn unconfirmed_ascii_row(text: &str) -> bool {
+    let text = text.trim();
+    text.starts_with('|') && text.ends_with('|') && text.matches('|').count() >= 3
+}
 fn escaped(text: &str, offset: usize) -> bool {
     text.as_bytes()[..offset]
         .iter()
@@ -95,8 +102,9 @@ pub fn detect(s: &vt100::Screen, fg: &str, bg: &str) -> Vec<Formula> {
 pub fn detect_output(s: &vt100::Screen, fg: &str, bg: &str, end: u16) -> Vec<Formula> {
     let (rows, cols) = s.size();
     let lines: Vec<_> = (0..rows).map(|r| line(s, r)).collect();
+    let tables = crate::table::Tables::detect(s, end);
     let mut result = Vec::new();
-    let mut consumed = std::collections::HashMap::<u16, usize>::new();
+    let mut consumed = std::collections::HashMap::<u16, Vec<(usize, usize)>>::new();
     let mut r = 0;
     let mut fenced: Option<(u8, usize)> = None;
     while r < end {
@@ -116,9 +124,9 @@ pub fn detect_output(s: &vt100::Screen, fg: &str, bg: &str, end: u16) -> Vec<For
             r += 1;
             continue;
         }
-        // Codex may put its response marker on the opening delimiter's row.
+        // Coding CLIs may put a response marker on the opening delimiter's row.
         // Only accept a marker-only prefix, never arbitrary prose or code.
-        let display_open = ["• ", "● "]
+        let display_open = ["• ", "● ", "⏺ "]
             .iter()
             .find_map(|prefix| trim.strip_prefix(prefix))
             .map(str::trim_start)
@@ -158,7 +166,7 @@ pub fn detect_output(s: &vt100::Screen, fg: &str, bg: &str, end: u16) -> Vec<For
                 continue;
             }
         }
-        let mut offset = consumed.get(&r).copied().unwrap_or(0);
+        let mut offset = 0;
         // Include a soft-wrapped successor for delimiter lookahead (notably
         // a digit after a closing dollar at the right edge of the screen).
         let scan_text = if s.row_wrapped(r) && r + 1 < end {
@@ -168,6 +176,14 @@ pub fn detect_output(s: &vt100::Screen, fg: &str, bg: &str, end: u16) -> Vec<For
         };
         let mut code = None;
         while offset < text.len() {
+            if let Some(&(_, finish)) = consumed.get(&r).and_then(|spans| {
+                spans
+                    .iter()
+                    .find(|&&(begin, finish)| begin <= offset && offset < finish)
+            }) {
+                offset = finish;
+                continue;
+            }
             let rest = &text[offset..];
             let ch = rest.chars().next().unwrap();
             if ch == '`' && (code.is_some() || !escaped(text, offset)) {
@@ -193,7 +209,16 @@ pub fn detect_output(s: &vt100::Screen, fg: &str, bg: &str, end: u16) -> Vec<For
                 None
             };
             if let Some((open, close, display)) = pair {
-                if let Some(n) = closing(&scan_text, offset + open.len(), close)
+                let limit = tables
+                    .cell(r, map[offset])
+                    .and_then(|cell| map.iter().position(|&c| c == cell.right))
+                    .or_else(|| {
+                        text[offset..]
+                            .find(|c| table_border(c) || (c == '|' && unconfirmed_ascii_row(text)))
+                            .map(|n| offset + n)
+                    });
+                let scan = &scan_text[..limit.unwrap_or(scan_text.len())];
+                if let Some(n) = closing(scan, offset + open.len(), close)
                     .filter(|&n| n + close.len() <= text.len())
                 {
                     let finish = n + close.len();
@@ -217,13 +242,18 @@ pub fn detect_output(s: &vt100::Screen, fg: &str, bg: &str, end: u16) -> Vec<For
                     continue;
                 } else if !display {
                     if let Some((formula, ends)) =
-                        wrapped(s, &lines, r, offset, open, close, end, fg, bg)
+                        wrapped(s, &lines, &tables, r, offset, open, close, end, fg, bg)
                     {
-                        for (row, finish) in ends {
-                            consumed.insert(row, finish);
+                        for (row, begin, finish) in ends {
+                            consumed.entry(row).or_default().push((begin, finish));
                         }
+                        let first = &formula.sources[0];
+                        offset = map
+                            .iter()
+                            .position(|&col| col == first.col + first.cols)
+                            .unwrap();
                         result.push(formula);
-                        break;
+                        continue;
                     }
                 }
             }
@@ -239,6 +269,7 @@ pub fn detect_output(s: &vt100::Screen, fg: &str, bg: &str, end: u16) -> Vec<For
 fn wrapped(
     s: &vt100::Screen,
     lines: &[(String, Vec<u16>)],
+    tables: &crate::table::Tables,
     row: u16,
     start: usize,
     open: &str,
@@ -246,9 +277,18 @@ fn wrapped(
     end: u16,
     fg: &str,
     bg: &str,
-) -> Option<(Formula, Vec<(u16, usize)>)> {
+) -> Option<(Formula, Vec<(u16, usize, usize)>)> {
     let first = &lines[row as usize];
-    let first_end = if s.row_wrapped(row) {
+    let cell = tables.cell(row, first.1[start]);
+    if cell.is_none()
+        && (first.0[start..].contains(table_border) || unconfirmed_ascii_row(&first.0))
+    {
+        return None;
+    }
+    let first_end = if let Some(cell) = cell {
+        let right = first.1.iter().position(|&c| c == cell.right)?;
+        first.0[..right].trim_end().len()
+    } else if s.row_wrapped(row) {
         first.0.len()
     } else {
         first.0.trim_end().len()
@@ -268,6 +308,20 @@ fn wrapped(
             return None;
         }
         let (text, map) = &lines[next as usize];
+        let cell_range = if let Some(cell) = cell {
+            if tables.cell(next, cell.left) != Some(cell) {
+                return None;
+            }
+            let begin = map.iter().position(|&c| c == cell.left)?;
+            let finish = map.iter().position(|&c| c == cell.right)?;
+            Some((begin, finish))
+        } else {
+            // Never join ordinary prose into a newly encountered table row.
+            if text.trim_start().starts_with(table_border) || unconfirmed_ascii_row(text) {
+                return None;
+            }
+            None
+        };
         let trim = text.trim();
         if trim.is_empty()
             || ["› ", "❯ ", "• ", "● ", "#", "```", "~~~", "\\[", "\\]"]
@@ -276,25 +330,32 @@ fn wrapped(
         {
             return None;
         }
-        let begin = if s.row_wrapped(next - 1) {
+        let begin = if let Some((begin, finish)) = cell_range {
+            finish - text[begin..finish].trim_start().len()
+        } else if s.row_wrapped(next - 1) {
             0
         } else {
             text.len() - text.trim_start().len()
         };
-        let last = if s.row_wrapped(next) {
+        let last = if let Some((begin, finish)) = cell_range {
+            begin + text[begin..finish].trim_end().len()
+        } else if s.row_wrapped(next) {
             text.len()
         } else {
             text.trim_end().len()
         };
+        if begin >= last {
+            return None;
+        }
         let part = &text[begin..last];
-        if !s.row_wrapped(next - 1) {
+        if cell.is_some() || !s.row_wrapped(next - 1) {
             body.push(' ');
         }
         let previous_len = body.len();
         body.push_str(part);
         // Scan the joined text so escape parity and the character before a
         // closing dollar remain correct at a terminal row boundary.
-        let scan_body = if s.row_wrapped(next) && next + 1 < end {
+        let scan_body = if cell.is_none() && s.row_wrapped(next) && next + 1 < end {
             format!("{body}{}", lines[next as usize + 1].0)
         } else {
             body.clone()
@@ -320,7 +381,7 @@ fn wrapped(
                 col: map[begin],
                 cols: map[finish] - map[begin],
             });
-            ends.push((next, finish));
+            ends.push((next, begin, finish));
             // Keep the equation intact on the source row with the most room.
             // Other source fragments disappear; surrounding prose remains native.
             let target = sources.iter().max_by_key(|span| span.cols)?;
@@ -343,13 +404,81 @@ fn wrapped(
             col: map[begin],
             cols: map[last] - map[begin],
         });
-        ends.push((next, last));
+        ends.push((next, begin, last));
     }
     None
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn table_rules_prevent_cross_record_math_and_allow_literal_pipes() {
+        let rule = "+--------------+--------------+";
+        let row = |a: &str, b: &str| format!("| {a:12} | {b:12} |");
+        let first = row(r"\(x+", "first");
+        let last = row(r"y\)", "second");
+        assert!(formulas(&format!("{rule}\r\n{first}\r\n{rule}\r\n{last}\r\n{rule}")).is_empty());
+        let f = formulas(&format!("{rule}\r\n{first}\r\n{last}\r\n{rule}"));
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].latex, "x+ y");
+        assert!(formulas(&format!("{first}\r\n{last}")).is_empty());
+        let literal = row(r"\(|x|+1\)", r"\(z\)");
+        let f = formulas(&format!("{rule}\r\n{literal}\r\n{rule}"));
+        assert_eq!(f.len(), 2);
+        assert_eq!(f[0].latex, "|x|+1");
+        assert_eq!(f[1].latex, "z");
+    }
+    #[test]
+    fn wrapped_table_math_stays_in_its_cell() {
+        let first = r"\(\oint B\cdot dl=\mu_0 I+";
+        let second = r"\mu_0\epsilon_0\frac{d\Phi_E}{dt}\)";
+        let mut p = vt100::Parser::new(10, 150, 0);
+        let table = format!(
+            "│ {:12} │ {:40} │ {:60} │\r\n│ {:12} │ {:40} │ {:60} │",
+            "Ampere", first, r"Magnetic circulation \(y\)", r"\(z\)", second, "flux through it"
+        );
+        let table = format!(
+            "{table}\r\n└{}┴{}┴{}┘",
+            "─".repeat(14),
+            "─".repeat(42),
+            "─".repeat(62)
+        );
+        p.process(table.as_bytes());
+        let f = detect(p.screen(), "#fff", "#000");
+        assert_eq!(f.len(), 3, "{f:?}");
+        let equation = &f[0];
+        assert_eq!(
+            equation.latex,
+            format!("{} {}", &first[2..], &second[..second.len() - 2])
+        );
+        assert_eq!(equation.sources.len(), 2);
+        assert!(equation.sources.iter().all(|s| s.col == 17 && s.cols <= 40));
+        assert!(f.iter().any(|f| f.latex == "y"));
+        assert!(f.iter().any(|f| f.latex == "z"));
+        // A row divider or changed column width ends the table cell: leave the
+        // incomplete source alone instead of swallowing the next record.
+        for separator in [
+            "├──────────────┼──────────────────────────────────────────┤\r\n",
+            "",
+        ] {
+            let mut p = vt100::Parser::new(10, 150, 0);
+            p.process(
+                format!(
+                    "│ {:12} │ {:40} │ note │\r\n{separator}│ {:12} │ {:39} │ note │",
+                    "Ampere", first, "", second
+                )
+                .as_bytes(),
+            );
+            assert!(detect(p.screen(), "#fff", "#000").is_empty());
+        }
+        // A closer in the adjacent cell cannot close this cell's opener.
+        assert!(formulas("│ \\(x │ explanation \\) │").is_empty());
+        assert!(formulas("\\(x │ explanation\r\ncontinued \\)").is_empty());
+        assert_eq!(
+            formulas(r"\(|x| + \lVert y\rVert\)")[0].latex,
+            r"|x| + \lVert y\rVert"
+        );
+    }
     fn formulas(input: &str) -> Vec<Formula> {
         let mut p = vt100::Parser::new(20, 100, 0);
         p.process(input.as_bytes());
@@ -432,7 +561,7 @@ mod tests {
     #[test]
     fn response_marker_before_display_block() {
         let latex = r"c=(\mu_0\varepsilon_0)^{-1/2}\approx3.00\times10^8\,\mathrm{m/s}";
-        for marker in ["•", "●"] {
+        for marker in ["•", "●", "⏺"] {
             for (open, close) in [(r"\[", r"\]"), ("$$", "$$")] {
                 let mut p = vt100::Parser::new(10, 100, 0);
                 p.process(
@@ -445,6 +574,9 @@ mod tests {
                 assert_eq!((f[0].row, f[0].col, f[0].rows, f[0].cols), (0, 2, 3, 98));
             }
         }
+        let f = formulas("⏺ \\[\r\n\r\n  \\nabla \\cdot \\mathbf{B}=0\r\n\r\n  \\]\r\nExplanation");
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].rows, 5);
         for prefix in ["• prose ", "› ", "`", "```\r\n• "] {
             let mut p = vt100::Parser::new(10, 100, 0);
             p.process(format!("{prefix}\\[\r\n  {latex}\r\n  \\]").as_bytes());

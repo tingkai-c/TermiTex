@@ -8,6 +8,7 @@ mod layout;
 mod native;
 mod renderer;
 mod session;
+mod table;
 mod terminal;
 
 fn main() {

@@ -367,6 +367,86 @@ mod tests {
     use super::*;
     use std::sync::mpsc;
     #[test]
+    fn wrapped_table_projection_preserves_borders_and_neighboring_prose() {
+        let (tx, requests) = mpsc::sync_channel(1);
+        let (responses, rx) = mpsc::channel();
+        let mut e = Engine::new(10, 120, (16, 34), tx, rx);
+        let table = format!(
+            "│ {:12} │ {:40} │ {:50} │\r\n│ {:12} │ {:40} │ {:50} │",
+            "Ampere",
+            r"\(B=I+",
+            "Magnetic circulation around loop",
+            "",
+            r"\frac{dE}{dt}\)",
+            "flux through it"
+        );
+        let table = format!(
+            "{table}\r\n└{}┴{}┴{}┘",
+            "─".repeat(14),
+            "─".repeat(42),
+            "─".repeat(52)
+        );
+        e.accept(table.as_bytes(), false, false);
+        let req = requests
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .unwrap();
+        assert_eq!(req.formula.latex, r"B=I+ \frac{dE}{dt}");
+        responses
+            .send(Response {
+                key: req.key,
+                png: STANDARD.encode([1, 2, 3]),
+                columns: 5,
+                error: None,
+            })
+            .unwrap();
+        e.poll();
+        for row in 0..2 {
+            for col in 0..120 {
+                let source = e.parser.screen().cell(row, col).unwrap().contents();
+                if source == "│" || (col >= 58 && !source.is_empty()) {
+                    assert_eq!(
+                        e.physical.screen().cell(row, col).unwrap().contents(),
+                        source,
+                        "row {row}, col {col}"
+                    );
+                }
+            }
+        }
+        assert!(!e.physical.screen().contents().contains("frac"));
+        assert_eq!(e.pins.len(), 1);
+    }
+    #[test]
+    fn identical_viewport_after_erase_or_scroll_restores_cached_placements() {
+        let (tx, requests) = mpsc::sync_channel(1);
+        let (responses, rx) = mpsc::channel();
+        let mut e = Engine::new(8, 80, (16, 34), tx, rx);
+        let source = b"\x1b[1;1H\\[x=1\\]";
+        e.accept(source, false, false);
+        let req = requests.recv().unwrap();
+        responses
+            .send(Response {
+                key: req.key,
+                png: STANDARD.encode([1, 2, 3]),
+                columns: req.formula.cols,
+                error: None,
+            })
+            .unwrap();
+        e.poll();
+        let mut gate = crate::frame::FrameGate::new();
+        for prefix in [b"\x1b[1;1H\x1b[J".as_slice(), b"\x1b[8;1H\n"] {
+            let mut bytes = prefix.to_vec();
+            bytes.extend_from_slice(source);
+            let b = gate.push(&bytes).unwrap();
+            let old = e.stats.placements;
+            let out = e.accept(&b.bytes, b.invalidate, b.moved);
+            assert!(out.contains("a=p,"));
+            assert_eq!(e.stats.placements, old + 1);
+            assert_eq!(e.stats.uploads, 1);
+            assert_eq!(e.stats.requests, 1);
+            assert_eq!(e.pins.len(), 1);
+        }
+    }
+    #[test]
     fn parallel_results_are_batched_deduplicated_and_placed_at_current_rows() {
         struct Pair(crate::renderer::ChannelRenderer);
         impl MathRenderer for Pair {

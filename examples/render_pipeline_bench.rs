@@ -11,6 +11,8 @@ mod detect;
 mod native;
 #[path = "../src/renderer.rs"]
 mod renderer;
+#[path = "../src/table.rs"]
+mod table;
 use renderer::{MathRenderer, RenderPool, Request};
 use std::time::{Duration, Instant};
 fn request(i: usize) -> Request {

@@ -9,6 +9,13 @@ struct Controls {
     moved: bool,
 }
 impl Perform for Controls {
+    fn execute(&mut self, byte: u8) {
+        // Line feeds can scroll at the bottom margin, including within a
+        // scrolling region. Their final text may be identical to the old frame.
+        if matches!(byte, b'\n' | 0x0b | 0x0c) {
+            self.moved = true;
+        }
+    }
     fn csi_dispatch(&mut self, p: &Params, i: &[u8], _: bool, a: char) {
         self.in_control = false;
         if i == b"?" && (a == 'h' || a == 'l') {
@@ -25,7 +32,9 @@ impl Perform for Controls {
         if a == 'J' && p.iter().any(|v| v[0] == 2 || v[0] == 3) {
             self.epoch += 1;
         }
-        if "STLM".contains(a) {
+        // Also refresh placements on erase-display redraws, even when the
+        // child restores exactly the same source text within this batch.
+        if "STLMJ".contains(a) {
             self.moved = true;
         }
     }
@@ -112,5 +121,22 @@ mod tests {
     #[test]
     fn ordinary() {
         assert_eq!(FrameGate::new().push(b"hello").unwrap().bytes, b"hello");
+    }
+    #[test]
+    fn partial_erase_and_line_feed_invalidate_placement_positions() {
+        for bytes in [
+            b"\x1b[J".as_slice(),
+            b"\x1b[0J",
+            b"\x1b[1J",
+            b"\n",
+            b"\x0b",
+            b"\x0c",
+        ] {
+            let b = FrameGate::new().push(bytes).unwrap();
+            assert!(b.moved, "{bytes:?}");
+            assert!(!b.invalidate, "cached image data remains usable");
+        }
+        let b = FrameGate::new().push(b"\x1b[2J").unwrap();
+        assert!(b.invalidate);
     }
 }

@@ -13,8 +13,8 @@ export function calculateFormulaGeometry(input) {
     const naturalWidth = Math.max(1, naturalHeight * input.aspectRatio);
     const paddingX = horizontalPadding(input.cell, input.display);
     // A display region is whitespace reserved by the TUI, even when the source
-    // only spanned a single row. Use its full height so tall fractions keep the
-    // same glyph scale as simple equations. Inline formulas retain padding for
+    // only spanned a single row. Use its full height to minimize shrinking.
+    // Inline formulas retain padding for
     // adjacent terminal text.
     const paddingY = verticalPadding(input.cell, input.display);
     const availableWidth = Math.max(1, canvasWidth - paddingX * 2);

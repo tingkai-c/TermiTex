@@ -94,8 +94,13 @@ pub fn columns(source: &Screen, row: u16, spans: &[Span]) -> Vec<u16> {
     if spans.is_empty() {
         return positions;
     }
+    let tables = crate::table::Tables::detect(source, source.size().0);
+    let borders = tables.boundaries(row);
     let (mut c, mut projected) = (0, 0);
     while c < cols {
+        if borders.contains(&c) {
+            projected = c;
+        }
         positions[c as usize] = projected;
         if let Some(&(_, old, new)) = spans.iter().find(|(start, _, _)| *start == c) {
             c += old;
@@ -169,6 +174,17 @@ pub fn paint_row(source: &Screen, physical: &Screen, row: u16, spans: &[Span]) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn borders_stay_fixed_without_double_space_padding() {
+        let mut source = vt100::Parser::new(2, 50, 0);
+        source.process("│ \\(x\\) │ explanation │\r\n└───────┴─────────────┘".as_bytes());
+        let positions = columns(source.screen(), 0, &[(2, 5, 1)]);
+        for col in 0..50 {
+            if source.screen().cell(0, col).unwrap().contents() == "│" {
+                assert_eq!(positions[col as usize], col);
+            }
+        }
+    }
     #[test]
     fn compact_native_prose_preserves_styles_and_unicode_and_restores() {
         let mut source = vt100::Parser::new(4, 80, 0);

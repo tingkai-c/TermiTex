@@ -1,5 +1,8 @@
 use serde::Deserialize;
 use std::{path::PathBuf, str::FromStr};
+// Claude's Markdown renderer consumes a single backslash before punctuation.
+// Request two in the response so the terminal retains our \( / \[ delimiters.
+const CLAUDE_MATH_PROMPT: &str = r"Write LaTeX math outside code formatting; double delimiter backslashes: \\(...\\) inline, \\[...\\] display. For display math, put delimiters on separate lines with blank lines around the body.";
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Renderer {
@@ -139,13 +142,33 @@ pub fn resolve(
             break;
         }
     }
-    if !args.is_empty()
-        && !literal
-        && std::path::Path::new(&args[0])
+    if !args.is_empty() && !literal {
+        match std::path::Path::new(&args[0])
             .file_name()
-            .is_some_and(|n| n == "codex")
-    {
-        args.splice(1..1, ["-c".into(), "tui.rendering.math=false".into()]);
+            .and_then(|n| n.to_str())
+        {
+            Some("codex") => {
+                args.splice(1..1, ["-c".into(), "tui.rendering.math=false".into()]);
+            }
+            Some("claude") => {
+                // Respect explicit append instructions, including file-based
+                // prompts. Passing duplicate flags can replace the user's text
+                // or be incompatible with older Claude Code versions.
+                let custom_append = args[1..].iter().take_while(|a| *a != "--").any(|a| {
+                    a == "--append-system-prompt"
+                        || a.starts_with("--append-system-prompt=")
+                        || a == "--append-system-prompt-file"
+                        || a.starts_with("--append-system-prompt-file=")
+                });
+                if !custom_append {
+                    args.splice(
+                        1..1,
+                        ["--append-system-prompt".into(), CLAUDE_MATH_PROMPT.into()],
+                    );
+                }
+            }
+            _ => {}
+        }
     }
     Ok(Options {
         graphics,
@@ -185,7 +208,14 @@ mod tests {
         };
         assert_eq!(
             resolve_args(&["claude", "--model", "sonnet", "--help"]),
-            ["claude", "--model", "sonnet", "--help"]
+            [
+                "claude",
+                "--append-system-prompt",
+                CLAUDE_MATH_PROMPT,
+                "--model",
+                "sonnet",
+                "--help"
+            ]
         );
         assert_eq!(
             resolve_args(&["codex", "resume"]),
@@ -200,6 +230,65 @@ mod tests {
             ["python", "-c", "print(1)"]
         );
         assert!(resolve(vec!["--typo".into()], None, None, "").is_err());
+    }
+    #[test]
+    fn claude_math_prompt_preserves_flags_and_explicit_prompts() {
+        // Single backslashes disappear in Claude's Markdown output. Keep the
+        // response examples escaped so its terminal output retains delimiters.
+        assert!(CLAUDE_MATH_PROMPT.contains(r"\\(...\\)"));
+        assert!(CLAUDE_MATH_PROMPT.contains(r"\\[...\\]"));
+        let resolve_args = |args: &[&str]| {
+            resolve(args.iter().map(|s| s.to_string()).collect(), None, None, "")
+                .unwrap()
+                .command
+        };
+        assert_eq!(
+            resolve_args(&[
+                "/usr/local/bin/claude",
+                "--model",
+                "sonnet",
+                "--continue",
+                "Explain x squared"
+            ]),
+            [
+                "/usr/local/bin/claude",
+                "--append-system-prompt",
+                CLAUDE_MATH_PROMPT,
+                "--model",
+                "sonnet",
+                "--continue",
+                "Explain x squared"
+            ]
+        );
+        for args in [
+            vec!["--", "claude", "--model", "sonnet"],
+            vec![
+                "claude",
+                "--append-system-prompt",
+                "My formatting",
+                "--continue",
+            ],
+            vec!["claude", "--append-system-prompt=My formatting"],
+            vec!["claude", "--append-system-prompt-file", "my rules.txt"],
+            vec!["claude", "--append-system-prompt-file=my rules.txt"],
+        ] {
+            let expected = if args[0] == "--" {
+                &args[1..]
+            } else {
+                &args[..]
+            };
+            assert_eq!(resolve_args(&args), expected);
+        }
+        assert_eq!(
+            resolve_args(&["claude", "--", "--append-system-prompt"]),
+            [
+                "claude",
+                "--append-system-prompt",
+                CLAUDE_MATH_PROMPT,
+                "--",
+                "--append-system-prompt"
+            ]
+        );
     }
     #[test]
     fn graphics_config_override_and_child_boundary() {
