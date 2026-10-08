@@ -12,10 +12,10 @@ trap 'touch "$control/exit"; if [[ -n ${terminal_pid:-} ]]; then kill "$terminal
 command="$root/target/release/termitex --layout $layout -- $root/target/debug/examples/terminal_fixture $control"
 case "$terminal" in
   kitty)
-    kitty --config NONE -o initial_window_width=1100 -o initial_window_height=850 -o font_size=16 -o background='#282c34' /usr/bin/script -q -e -c "$command" "$out/transcript.txt" &
+    kitty --config NONE -o initial_window_width=1100 -o initial_window_height=850 -o font_size=16 -o background='#282c34' /usr/bin/script -q -e -f -c "$command" "$out/transcript.txt" &
     ;;
   konsole)
-    konsole --separate --hide-menubar --hide-tabbar -p 'Font=DejaVu Sans Mono,16,-1,5,50,0,0,0,0,0' -e /usr/bin/script -q -e -c "$command" "$out/transcript.txt" &
+    konsole --separate --hide-menubar --hide-tabbar -p 'Font=DejaVu Sans Mono,16,-1,5,50,0,0,0,0,0' -e /usr/bin/script -q -e -f -c "$command" "$out/transcript.txt" &
     ;;
   *) exit 2 ;;
 esac

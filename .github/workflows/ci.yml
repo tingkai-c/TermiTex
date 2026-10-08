@@ -53,9 +53,9 @@ jobs:
         run: |
           mkdir -p terminal-reports
           kitty --version > terminal-reports/versions.txt
-          konsole --version >> terminal-reports/versions.txt
-          timeout 30s xvfb-run -a kitty --config NONE /usr/bin/script -q -e -c "$PWD/target/release/termitex doctor" "$PWD/terminal-reports/kitty.txt"
-          timeout 30s xvfb-run -a dbus-run-session -- konsole --separate -e /usr/bin/script -q -e -c "$PWD/target/release/termitex doctor" "$PWD/terminal-reports/konsole.txt"
+          QT_QPA_PLATFORM=offscreen konsole --version >> terminal-reports/versions.txt
+          timeout 30s xvfb-run -a kitty --config NONE /usr/bin/script -q -e -f -c "$PWD/target/release/termitex doctor" "$PWD/terminal-reports/kitty.txt"
+          timeout 30s xvfb-run -a dbus-run-session -- konsole --separate -e /usr/bin/script -q -e -f -c "$PWD/target/release/termitex doctor" "$PWD/terminal-reports/konsole.txt"
           grep -q '"kitty_graphics": true' terminal-reports/kitty.txt
           grep -q '"kitty_graphics": true' terminal-reports/konsole.txt
       - name: Capture real terminal rendering, scroll and resize
