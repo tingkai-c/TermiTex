@@ -88,7 +88,7 @@ fn probe(
 ) -> io::Result<(Capabilities, Vec<u8>)> {
     io::stdout().write_all(probe.queries().as_bytes())?;
     io::stdout().flush()?;
-    let deadline = Instant::now() + Duration::from_millis(200);
+    let deadline = Instant::now() + Duration::from_millis(500);
     let mut received = 0;
     let mut buf = [0; 1024];
     while Instant::now() < deadline && received < 65536 {

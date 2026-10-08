@@ -64,9 +64,9 @@ jobs:
           kitty --version > terminal-reports/versions.txt
           QT_QPA_PLATFORM=offscreen konsole --version >> terminal-reports/versions.txt
           wezterm --version >> terminal-reports/versions.txt
-          timeout 30s xvfb-run -a kitty --config NONE /usr/bin/script -q -e -f -c "$PWD/target/release/termitex doctor" "$PWD/terminal-reports/kitty.txt"
-          timeout 30s xvfb-run -a dbus-run-session -- konsole --separate -e /usr/bin/script -q -e -f -c "$PWD/target/release/termitex doctor" "$PWD/terminal-reports/konsole.txt"
-          timeout 30s xvfb-run -a wezterm --skip-config --config enable_kitty_graphics=true --config enable_wayland=false start --always-new-process -- /usr/bin/script -q -e -f -c "$PWD/target/release/termitex doctor" "$PWD/terminal-reports/wezterm.txt"
+          timeout 30s xvfb-run -a kitty --config NONE /usr/bin/script -q -e -f -c "sleep 1; exec $PWD/target/release/termitex doctor" "$PWD/terminal-reports/kitty.txt"
+          timeout 30s xvfb-run -a dbus-run-session -- konsole --separate -e /usr/bin/script -q -e -f -c "sleep 1; exec $PWD/target/release/termitex doctor" "$PWD/terminal-reports/konsole.txt"
+          timeout 30s xvfb-run -a wezterm --skip-config --config enable_kitty_graphics=true --config enable_wayland=false start --always-new-process -- /usr/bin/script -q -e -f -c "sleep 1; exec $PWD/target/release/termitex doctor" "$PWD/terminal-reports/wezterm.txt"
           grep -q '"kitty_graphics": true' terminal-reports/wezterm.txt
           grep -q '"kitty_graphics": true' terminal-reports/kitty.txt
           grep -q '"kitty_graphics": true' terminal-reports/konsole.txt

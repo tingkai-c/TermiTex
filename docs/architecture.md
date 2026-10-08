@@ -18,7 +18,7 @@ flowchart LR
 
 ## Interfaces
 
-- `TerminalProbe` produces queries, consumes replies, reports capabilities, and returns unrelated user input. `KittyProbe` checks graphics transport, pixel cell size, and synchronized updates. Probing has a 200 ms deadline and a 64 KiB input bound. Environment variables identify the terminal for reports; they do not enable graphics.
+- `TerminalProbe` produces queries, consumes replies, reports capabilities, and returns unrelated user input. `KittyProbe` checks graphics transport, pixel cell size, and synchronized updates. Probing has a 500 ms deadline and a 64 KiB input bound. Environment variables identify the terminal for reports; they do not enable graphics.
 - `GraphicsBackend` encodes upload, placement, removal, release, and cleanup operations. It returns commands rather than writing to stdout. `KittyGraphics` is the shared implementation. Layout supplies rectangles and image identifiers; it never constructs graphics escape sequences.
 - `MathRenderer` exposes nonblocking submission and polling plus worker shutdown. `WorkerRenderer` owns an isolated renderer process and a bounded request channel. The I/O thread can wait for a response without blocking terminal input. Tests substitute `ChannelRenderer`.
 

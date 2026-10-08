@@ -32,7 +32,7 @@ graphics = "auto" # auto, kitty, or off
 
 CLI graphics selection overrides the config file. Terminal identities are not used as a substitute for successful probing. Unknown terminals that implement the protocol can also be detected.
 
-Cell size is queried at startup. If no reply arrives, TermiTex uses PTY pixel dimensions, or finally 16 × 34 px. Resize events use updated PTY dimensions when available. Font-size changes on terminals that do not update PTY pixel dimensions currently require restarting TermiTex. Probe timeout is 200 ms; replies that arrive after negotiation can still reach the child, so use a direct local terminal when collecting baseline reports.
+Cell size is queried at startup. If no reply arrives, TermiTex uses PTY pixel dimensions, or finally 16 × 34 px. Resize events use updated PTY dimensions when available. Font-size changes on terminals that do not update PTY pixel dimensions currently require restarting TermiTex. Probe timeout is 500 ms; replies that arrive after negotiation can still reach the child, so use a direct local terminal when collecting baseline reports.
 
 Use a direct terminal session for initial testing. tmux, screen, SSH, and terminal multiplexing introduce separate transport and geometry behavior and are not included in the initial compatibility claim.
 

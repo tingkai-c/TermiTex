@@ -30,11 +30,6 @@ case "$terminal" in
   *) exit 2 ;;
 esac
 terminal_pid=$!
-for _ in $(seq 1 100); do
-  [[ -f "$control/ready" ]] && break
-  sleep 0.1
-done
-test -f "$control/ready"
 window=
 for _ in $(seq 1 100); do
   window=$(xdotool search --onlyvisible --class 'kitty|konsole|org.wezfurlong.wezterm' | head -1 || true)
@@ -43,6 +38,12 @@ for _ in $(seq 1 100); do
 done
 test -n "$window"
 xdotool windowsize "$window" 1100 850
+touch "$control/start"
+for _ in $(seq 1 100); do
+  [[ -f "$control/ready" ]] && break
+  sleep 0.1
+done
+test -f "$control/ready"
 # Wait for real placements to reach the emulator, then allow the GUI to paint.
 for _ in $(seq 1 100); do
   [[ $(grep -ao 'a=p,' "$out/transcript.txt" | wc -l) -ge 6 ]] && break
