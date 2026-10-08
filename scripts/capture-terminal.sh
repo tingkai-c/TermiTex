@@ -17,6 +17,9 @@ case "$terminal" in
   konsole)
     konsole --separate --hide-menubar --hide-tabbar -p 'Font=DejaVu Sans Mono,16,-1,5,50,0,0,0,0,0' -e /usr/bin/script -q -e -f -c "$command" "$out/transcript.txt" &
     ;;
+  wezterm)
+    wezterm --skip-config --config enable_kitty_graphics=true --config enable_wayland=false --config font_size=16 start --always-new-process -- /usr/bin/script -q -e -f -c "$command" "$out/transcript.txt" &
+    ;;
   *) exit 2 ;;
 esac
 terminal_pid=$!
